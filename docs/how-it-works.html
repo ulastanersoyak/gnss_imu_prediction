@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>How it works · gnss_imu_prediction</title>
+<style>
+:root{--bg:#fbfaf8;--fg:#1d1d1f;--muted:#5f6368;--line:#e3e1dc;--card:#ffffff;
+--code:#f2f0ec;--accent:#c2410c;--accent2:#1d4ed8;--ok:#15803d;--warn:#b45309}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#141416;--fg:#e8e6e3;
+--muted:#a1a1aa;--line:#2c2c31;--card:#1c1c20;--code:#232328;--accent:#fb923c;--accent2:#60a5fa;
+--ok:#4ade80;--warn:#fbbf24}}
+:root[data-theme="dark"]{--bg:#141416;--fg:#e8e6e3;--muted:#a1a1aa;--line:#2c2c31;--card:#1c1c20;
+--code:#232328;--accent:#fb923c;--accent2:#60a5fa;--ok:#4ade80;--warn:#fbbf24}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.65 system-ui,-apple-system,"Segoe UI",sans-serif}
+main{max-width:860px;margin:0 auto;padding:32px 16px 80px}
+header.top{border-bottom:1px solid var(--line);padding-bottom:20px;margin-bottom:28px}
+.repo{font:600 13px/1 ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--accent);letter-spacing:.04em}
+h1{font-size:2rem;line-height:1.2;margin:.35em 0 .3em}
+.lede{color:var(--muted);font-size:1.08rem;margin:0}
+nav.pages{display:flex;flex-wrap:wrap;gap:8px;margin-top:16px}
+nav.pages a{font-size:14px;padding:4px 12px;border:1px solid var(--line);border-radius:999px;text-decoration:none;color:var(--fg)}
+nav.pages a.here{background:var(--fg);color:var(--bg);border-color:var(--fg)}
+h2{font-size:1.4rem;margin:2.2em 0 .5em;padding-top:.2em}
+h3{font-size:1.08rem;margin:1.6em 0 .4em}
+a{color:var(--accent2)}
+code{font:0.88em ui-monospace,SFMono-Regular,Menlo,monospace;background:var(--code);padding:.1em .35em;border-radius:4px}
+pre{background:var(--code);border:1px solid var(--line);border-radius:8px;padding:14px 16px;overflow-x:auto;line-height:1.5}
+pre code{background:none;padding:0;font-size:13.5px}
+table{border-collapse:collapse;width:100%;font-size:14.5px;margin:1em 0;display:block;overflow-x:auto}
+th,td{text-align:left;padding:7px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-weight:600;color:var(--muted);font-size:13px;text-transform:lowercase}
+.steps{counter-reset:s;list-style:none;padding:0}
+.steps>li{counter-increment:s;position:relative;padding-left:44px;margin:0 0 22px}
+.steps>li::before{content:counter(s);position:absolute;left:0;top:0;width:30px;height:30px;border-radius:50%;
+background:var(--accent);color:var(--bg);font-weight:700;display:grid;place-items:center;font-size:14px}
+.note{border-left:3px solid var(--accent2);background:var(--card);padding:10px 14px;border-radius:0 8px 8px 0;margin:1em 0;font-size:15px}
+.note.warn{border-color:var(--warn)}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px;margin:1em 0}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px 16px}
+.card h4{margin:0 0 6px;font-size:15px}
+.card p{margin:0;font-size:14.5px;color:var(--muted)}
+figure{margin:1.4em 0}
+figure img,figure svg{max-width:100%;height:auto;display:block;border-radius:8px;border:1px solid var(--line)}
+figcaption{color:var(--muted);font-size:14px;margin-top:6px}
+svg text{font-family:system-ui,sans-serif}
+.math{font-family:ui-monospace,Menlo,monospace;background:var(--code);padding:10px 14px;border-radius:8px;overflow-x:auto;white-space:pre;font-size:14px}
+footer{margin-top:60px;color:var(--muted);font-size:13px;border-top:1px solid var(--line);padding-top:16px}
+</style>
+</head>
+<body>
+<main>
+<header class="top">
+<div class="repo">gnss_imu_prediction</div>
+<h1>How it works</h1>
+<p class="lede">How GPS and IMU are fused in a Kalman filter, and how that filter predicts one second ahead.</p>
+<nav class="pages"><a href="getting-started.html">getting started</a><a href="how-it-works.html" class="here">how it works</a><a href="../README.md">readme</a></nav>
+</header>
+<p>A GPS receiver tells you where you were, about once a second, give or take a few metres. An IMU tells you how you are accelerating, a hundred times a second, but integrating it drifts away within seconds. A Kalman filter combines the two strengths: the IMU carries the state smoothly between fixes, and each fix pulls it back to the truth. Once you have a good position and velocity, plus the recent measured acceleration, predicting one second ahead is a matter of running the motion model forward without a measurement.</p>
+
+<h2>the state</h2>
+<div class="math">x = [ east, north, up, v_east, v_north, v_up ]      (UTM grid of the first fix, metres)</div>
+<p>P, a 6×6 covariance, holds how sure the filter is about each element and how the elements correlate. NMEA has no vertical velocity, so <code>v_up</code> is learned only from the accelerometer and from successive altitudes.</p>
+
+<h2>one cycle</h2>
+<figure>
+<svg viewBox="0 0 820 200" role="img" aria-label="timeline: many imu predictions between gps updates, and the ghost one second ahead">
+<g stroke="var(--muted)" stroke-width="1.2"><line x1="20" y1="120" x2="800" y2="120"/></g>
+<g stroke="var(--accent2)" stroke-width="1">
+<line x1="40" y1="112" x2="40" y2="128"/><line x1="60" y1="112" x2="60" y2="128"/><line x1="80" y1="112" x2="80" y2="128"/><line x1="100" y1="112" x2="100" y2="128"/><line x1="120" y1="112" x2="120" y2="128"/><line x1="140" y1="112" x2="140" y2="128"/><line x1="160" y1="112" x2="160" y2="128"/><line x1="180" y1="112" x2="180" y2="128"/><line x1="200" y1="112" x2="200" y2="128"/><line x1="220" y1="112" x2="220" y2="128"/><line x1="240" y1="112" x2="240" y2="128"/><line x1="260" y1="112" x2="260" y2="128"/><line x1="280" y1="112" x2="280" y2="128"/><line x1="300" y1="112" x2="300" y2="128"/><line x1="320" y1="112" x2="320" y2="128"/><line x1="340" y1="112" x2="340" y2="128"/><line x1="360" y1="112" x2="360" y2="128"/><line x1="380" y1="112" x2="380" y2="128"/><line x1="400" y1="112" x2="400" y2="128"/><line x1="420" y1="112" x2="420" y2="128"/><line x1="440" y1="112" x2="440" y2="128"/><line x1="460" y1="112" x2="460" y2="128"/>
+</g>
+<g fill="var(--accent)"><circle cx="40" cy="120" r="7"/><circle cx="440" cy="120" r="7"/></g>
+<rect x="452" y="108" width="10" height="24" fill="var(--fg)"/>
+<path d="M462 90 Q620 60 780 90" fill="none" stroke="var(--ok)" stroke-width="2" stroke-dasharray="6 5"/>
+<rect x="770" y="80" width="22" height="22" rx="3" fill="none" stroke="var(--ok)" stroke-width="2.5"/>
+<g font-size="13" fill="var(--fg)">
+<text x="40" y="155" text-anchor="middle">gps fix</text><text x="440" y="155" text-anchor="middle">gps fix</text>
+<text x="240" y="100" text-anchor="middle" fill="var(--accent2)">imu predict every 10 ms</text>
+<text x="457" y="180" text-anchor="middle">now</text>
+<text x="620" y="50" text-anchor="middle" fill="var(--ok)">predict_ahead(1.0) → ghost</text>
+<text x="781" y="155" text-anchor="middle">now + 1 s</text>
+</g>
+</svg>
+</figure>
+
+<h3>predict, on every IMU sample (100 Hz)</h3>
+<p>The IMU acceleration, already rotated to east/north/up with gravity removed by the shared <code>xbus</code> library, then rotated by the grid convergence into UTM-grid axes, is the control input of a constant-velocity model:</p>
+<div class="math">p ← p + v·dt + ½·a·dt²        v ← v + a·dt
+Q per axis = σ²·[ dt³/3  dt²/2 ; dt²/2  dt ]     σ smaller with imu, larger without</div>
+<p>Q is the uncertainty added because the acceleration is not known exactly. Without an IMU the filter still runs, but with a larger σ standing in for unknown manoeuvres.</p>
+
+<h3>update, on every GPS fix (1 Hz)</h3>
+<ol>
+<li><b>Position (+ altitude).</b> σ<sub>h</sub> scales with the HDOP (with a floor), and σ<sub>v</sub> is a multiple of σ<sub>h</sub>, because receivers are worse vertically. Without an altitude in the fix, only east/north are updated.</li>
+<li><b>Gate.</b> The normalised innovation squared is compared to a χ² threshold for the measurement's degrees of freedom. A fix outside it is rejected as a glitch. After several rejections in a row the filter assumes that <i>it</i> is the one that is wrong, and restarts from the GPS.</li>
+<li><b>Velocity.</b> Speed and course become a horizontal velocity measurement (course rotated from true to grid north). At very low speed the course is meaningless, so a slow fix is used as “zero velocity” instead.</li>
+</ol>
+
+<h2>the prediction</h2>
+<p><code>predict_ahead(t)</code> copies the filter and runs the predict step once over <code>t</code> seconds, with no update. For the acceleration it uses the recent IMU acceleration, low-pass filtered so one noisy sample does not throw the ghost off. The copied covariance grows with <code>t</code>, so the returned σ tells you how much to trust the prediction.</p>
+<div class="note">The model assumes acceleration stays constant for the next second. That is why the worst predictions (the p95 column) happen at the start of turns and speed changes: the drone has started doing something the recent acceleration did not show.</div>
+
+<h2>why it should beat raw GPS</h2>
+<p>The filter averages GPS noise over many fixes, weighted by how consistent each one is with the IMU motion, and it knows the acceleration, which a fix alone cannot. Altitude is expected to be the hardest axis: it is the noisiest measurement and the only one with no velocity measurement. The simulation prints its own comparison (ghost vs. raw GPS extrapolated, estimate vs. raw fix) when you stop it. Accuracy results are not documented yet while the tuning is in progress.</p>
+
+<h2>the simulation</h2>
+<p><code>sim/worlds/positioning.sdf</code> has a real multirotor model. It tilts to accelerate, so the IMU orientation and gravity removal are exercised the same way as on hardware. <code>positioning_sim</code> connects to Gazebo:</p>
+<table>
+<tr><th>topic</th><th>becomes</th></tr>
+<tr><td><code>/drone/imu</code> 100 Hz</td><td><code>Xbus</code> sample with added bias, tilt and heading error → <code>add_imu_sample</code></td></tr>
+<tr><td><code>/drone/navsat</code> 1 Hz</td><td><code>gps_fix</code> with white noise + drift → <code>add_gps_fix</code></td></tr>
+<tr><td><code>/model/drone/pose</code></td><td>ground truth, used only for scoring</td></tr>
+<tr><td><code>/drone/cmd_vel</code></td><td>the bridge flies the figure-eight here (unless <code>--manual</code>)</td></tr>
+</table>
+<p>Each ghost is stored with its target time. When the simulation reaches that time, the ghost is compared to the true pose. That comparison is the error you see. The same <code>position_estimator</code> class runs in <code>src/main.cpp</code> on the device. Only the inputs differ.</p>
+
+<h2>where to look in the code</h2>
+<table>
+<tr><td><code>includes/kalman/position_estimator.hpp</code></td><td><code>estimator_config</code>: every σ, gate and time constant with its current default, the estimate struct, the API</td></tr>
+<tr><td><code>src/kalman/position_estimator.cpp</code></td><td><code>propagate</code>, <code>add_imu_sample</code>, <code>add_gps_fix</code>, <code>predict_ahead</code></td></tr>
+<tr><td><code>external/gnss-imu-fusion/includes/kalman/kalman_filter.hpp</code></td><td>the generic predict / NIS / Joseph update</td></tr>
+<tr><td><code>sim/src/positioning_sim.cpp</code></td><td>sensor noise models, flight controller, scoring, markers</td></tr>
+<tr><td><code>test/cpp/kalman/estimator.hpp</code></td><td>behaviour pinned by tests: gating, reset, altitude, vertical IMU</td></tr>
+</table>
+
+<footer>gnss_imu_prediction · part of gnss-imu-fusion, gnss_imu_prediction and drone_localization</footer>
+</main>
+</body>
+</html>

@@ -1,10 +1,18 @@
-# gnss-imu-fusion
+# gnss_imu_prediction
 
 3d position estimation and short term position prediction for a raspberry pi
 4 carrying a u-blox max-m10s gnss receiver and an xsens mti-630 imu. gps fixes
 (1 hz) and imu acceleration (100 hz) are fused in a kalman filter, which
 gives a smoother position and altitude than the raw receiver and predicts
 where the device will be a moment later.
+
+the parsers, utm conversion, imu driver, matrix/kalman core and simulation
+helpers come from [gnss-imu-fusion](external/gnss-imu-fusion), included as a
+git submodule. its sibling project, `drone_localization`, locates the
+same drone from external sensors.
+
+guides: [getting started](docs/getting-started.html) ·
+[how it works](docs/how-it-works.html)
 
 ![the gazebo simulation: the drone flying its figure-eight, its ghost one second ahead, the noisy gps fixes and the accuracy overlay](docs/images/simulation.gif)
 
@@ -36,12 +44,12 @@ mti-630 ─── xbus (115200 baud) ─▶ mtdata2 parser ───────
 
 | path | what |
 |---|---|
-| `includes/`, `src/` | the libraries: `time_and_location`, `rmc`, `utm`, `xbus`/`mti_630`, `gps`, `kalman` |
+| `includes/kalman/`, `src/kalman/` | `position_estimator`, the filter and the prediction (target `kalman`) |
 | `src/main.cpp` | the device program, prints the estimate as csv |
-| `sim/` | gazebo simulations: worlds, bridge programs, gui overlay plugin, yolo detector |
-| `test/cpp/` | unit tests |
-| `test/python/` | serial capture script and a recorded nmea log |
-| `docs/` | datasheets and papers used |
+| `sim/` | gazebo simulation: world, bridge program, run script |
+| `test/cpp/` | unit tests of the estimator |
+| `external/gnss-imu-fusion/` | submodule: parsers, utm, imu, gps, serial port, matrix, gui overlay, `sim/gui.config` |
+| `docs/` | the html guides, the kalman paper used, images |
 
 ## building
 
@@ -50,22 +58,26 @@ needed for the device program; without it the libraries and tests still
 build.
 
 ```
-mkdir build && cd build
-cmake ..
-cmake --build .
-ctest
+git clone --recurse-submodules <url>/gnss_imu_prediction
+cd gnss_imu_prediction            # or, in an existing clone: git submodule update --init
+cmake -S . -B build
+cmake --build build
+ctest --test-dir build
 ```
+
+for local clones side by side, git refuses `file://` submodules by default:
+`git -c protocol.file.allow=always submodule update --init`.
 
 ## running on the device
 
 ```
 ./build/src/main                                   # live: gps on uart0, imu on uart4
-./build/src/main test/python/get_data/data.txt     # replay a recorded nmea log
+./build/src/main external/gnss-imu-fusion/test/python/get_data/data.txt   # replay a recorded nmea log
 ```
 
 output is csv on stdout: the estimate (lat/lon, altitude and utm), velocity,
 uncertainty, the raw gps fix and the position predicted one second ahead.
-if the imu port cannot be opened it runs on gps only. `docs/uart.sh` has the
+if the imu port cannot be opened it runs on gps only. `external/gnss-imu-fusion/docs/uart.sh` has the
 notes for enabling the uarts on the pi.
 
 for the best imu input, enable the free acceleration output in mt manager
@@ -118,7 +130,7 @@ what is drawn:
   would be now, and how far off it was
 - **yellow dots**: the last 20 noisy gps fixes, at their noisy altitude
 - **top left overlay**: live accuracy, from the accuracy overlay gui plugin
-  in `sim/gui_plugin/`
+  in `external/gnss-imu-fusion/sim/gui_plugin/`
 
 ### results
 
@@ -144,61 +156,3 @@ most of the error is vertical, because altitude is the noisiest measurement
 and, unlike the horizontal axes, has no velocity measurement to help it.
 with noise free gps the kalman altitude stays within about 0.1 m, so what
 limits it is the gps altitude noise, not the imu or the prediction.
-
-## pole tracking simulation
-
-the same quadrotor is tracked from a pole beside its flight path. the pole
-carries a uwb anchor (range, 20 hz) and a camera on a pan-tilt mount. a yolo
-detector finds the drone in the camera image and each detection becomes a
-bearing ray. `pole_tracking_sim` fuses the ranges and rays, optionally with
-the drone's own imu and gps, and scores the estimate against the true pose.
-the camera is turned towards the estimate (never the ground truth), slew
-rate limited, so it keeps the drone in view. detections arrive late because
-yolo takes time, so all measurements are buffered and fused in timestamp
-order a fixed time behind the simulation.
-
-![pole tracking: the uwb range ring, the camera ray from the pole and the fused estimate following the drone](docs/images/pole_tracking.gif)
-
-what the pole camera sees, with yolo's detection and a zoomed inset:
-
-![yolo detections from the pole camera](docs/images/yolo_detections.gif)
-
-the detector is trained once on images generated from simulated flights,
-labelled from the true pose:
-
-```
-distrobox enter gazebo -- sim/detector/setup.sh     # yolo into build-sim/yolo-venv
-distrobox enter gazebo -- sim/detector/train.sh     # dataset + training, writes build-sim/drone.pt
-```
-
-then:
-
-```
-distrobox enter gazebo -- sim/run_pole.sh                                # with the gazebo window
-distrobox enter gazebo -- sim/run_pole.sh --headless --duration 120      # terminal only
-distrobox enter gazebo -- sim/run_pole.sh --no-gps --no-imu              # camera and uwb only
-```
-
-`run_pole.sh` builds into `build-sim/`, starts gazebo with an extra panel
-showing what yolo sees, runs the detector (`sim/detector/detect.py`) and the
-bridge, which prints the fused error every second. gazebo and detector logs
-go to `build-sim/gz.log` and `build-sim/detector.log`. the camera needs a
-display even with `--headless`. `DETECTOR_IMGSZ` sets the yolo input size
-(default 1280). options:
-
-| option | default | |
-|---|---|---|
-| `--no-gps` | | don't use the gps |
-| `--no-imu` | | don't use the imu |
-| `--uwb-noise m` | 0.1 | uwb range noise |
-| `--gps-noise m` | 1.5 | white gps position noise |
-| `--latency s` | 0.4 | fuse measurements this far behind the simulation |
-| `--duration s` | forever | stop after this much simulated time |
-| `--radius m` | 8 | figure-eight loop radius |
-| `--altitude m` | 8 | cruise height above the ground |
-| `--altitude-swing m` | 3 | how far it climbs and descends around the cruise height |
-| `--seed n` | 1 | noise seed |
-| `--csv file` | | write the estimate and ground truth to a file |
-| `--no-follow` | | don't move the gui camera with the drone |
-| `--fixed-camera` | | keep the pole camera in its rest pose instead of turning it towards the drone |
-| `--slew-rate deg` | 120 | pan-tilt speed limit, degrees per second |

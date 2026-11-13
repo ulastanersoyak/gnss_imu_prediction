@@ -1,0 +1,3 @@
+[submodule "external/gnss-imu-fusion"]
+	path = external/gnss-imu-fusion
+	url = ../gnss-imu-fusion

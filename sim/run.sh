@@ -7,6 +7,10 @@
 set -euo pipefail
 
 root=$(cd "$(dirname "$0")/.." && pwd)
+if [[ ! -f $root/external/gnss-imu-fusion/CMakeLists.txt ]]; then
+  echo "external/gnss-imu-fusion is empty, run: git submodule update --init" >&2
+  exit 1
+fi
 build=$root/build-sim
 
 headless=false
@@ -17,12 +21,12 @@ done
 
 cmake -S "$root" -B "$build" -DCMAKE_BUILD_TYPE=Release >/dev/null
 cmake --build "$build" -j --target positioning_sim AccuracyOverlay
-export GZ_GUI_PLUGIN_PATH="$build/sim${GZ_GUI_PLUGIN_PATH:+:$GZ_GUI_PLUGIN_PATH}"
+export GZ_GUI_PLUGIN_PATH="$build/gz_gui_plugins${GZ_GUI_PLUGIN_PATH:+:$GZ_GUI_PLUGIN_PATH}"
 
 if $headless; then
   gz sim -s -r "$root/sim/worlds/positioning.sdf" &>"$build/gz.log" &
 else
-  gz sim -r --gui-config "$root/sim/gui.config" \
+  gz sim -r --gui-config "$root/external/gnss-imu-fusion/sim/gui.config" \
     "$root/sim/worlds/positioning.sdf" &>"$build/gz.log" &
 fi
 gz_pid=$!
