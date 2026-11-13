@@ -2,12 +2,12 @@ cmake_minimum_required(VERSION 3.22)
 
 project(gnss_imu_prediction VERSION 0.1.0 LANGUAGES CXX)
 
-set(gnss_imu_fusion_dir ${CMAKE_CURRENT_SOURCE_DIR}/external/gnss-imu-fusion)
-if(NOT EXISTS ${gnss_imu_fusion_dir}/CMakeLists.txt)
-  message(FATAL_ERROR "external/gnss-imu-fusion is empty, run: git submodule update --init")
+set(localization_core_dir ${CMAKE_CURRENT_SOURCE_DIR}/external/localization_core)
+if(NOT EXISTS ${localization_core_dir}/CMakeLists.txt)
+  message(FATAL_ERROR "external/localization_core is empty, run: git submodule update --init")
 endif()
-include(${gnss_imu_fusion_dir}/cmake/common.cmake)
-add_subdirectory(${gnss_imu_fusion_dir})
+include(${localization_core_dir}/cmake/common.cmake)
+add_subdirectory(${localization_core_dir})
 
 find_package(Threads REQUIRED)
 

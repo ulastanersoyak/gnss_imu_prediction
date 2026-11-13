@@ -7,7 +7,7 @@ gives a smoother position and altitude than the raw receiver and predicts
 where the device will be a moment later.
 
 the parsers, utm conversion, imu driver, matrix/kalman core and simulation
-helpers come from [gnss-imu-fusion](external/gnss-imu-fusion), included as a
+helpers come from [localization_core](external/localization_core), included as a
 git submodule. its sibling project, `drone_localization`, locates the
 same drone from external sensors.
 
@@ -48,7 +48,7 @@ mti-630 ─── xbus (115200 baud) ─▶ mtdata2 parser ───────
 | `src/main.cpp` | the device program, prints the estimate as csv |
 | `sim/` | gazebo simulation: world, bridge program, run script |
 | `test/cpp/` | unit tests of the estimator |
-| `external/gnss-imu-fusion/` | submodule: parsers, utm, imu, gps, serial port, matrix, gui overlay, `sim/gui.config` |
+| `external/localization_core/` | submodule: parsers, utm, imu, gps, serial port, matrix, gui overlay, `sim/gui.config` |
 | `docs/` | the html guides, the kalman paper used, images |
 
 ## building
@@ -72,12 +72,12 @@ for local clones side by side, git refuses `file://` submodules by default:
 
 ```
 ./build/src/main                                   # live: gps on uart0, imu on uart4
-./build/src/main external/gnss-imu-fusion/test/python/get_data/data.txt   # replay a recorded nmea log
+./build/src/main external/localization_core/test/python/get_data/data.txt   # replay a recorded nmea log
 ```
 
 output is csv on stdout: the estimate (lat/lon, altitude and utm), velocity,
 uncertainty, the raw gps fix and the position predicted one second ahead.
-if the imu port cannot be opened it runs on gps only. `external/gnss-imu-fusion/docs/uart.sh` has the
+if the imu port cannot be opened it runs on gps only. `external/localization_core/docs/uart.sh` has the
 notes for enabling the uarts on the pi.
 
 for the best imu input, enable the free acceleration output in mt manager
@@ -130,7 +130,7 @@ what is drawn:
   would be now, and how far off it was
 - **yellow dots**: the last 20 noisy gps fixes, at their noisy altitude
 - **top left overlay**: live accuracy, from the accuracy overlay gui plugin
-  in `external/gnss-imu-fusion/sim/gui_plugin/`
+  in `external/localization_core/sim/gui_plugin/`
 
 ### results
 

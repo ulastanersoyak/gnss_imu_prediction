@@ -7,8 +7,8 @@
 set -euo pipefail
 
 root=$(cd "$(dirname "$0")/.." && pwd)
-if [[ ! -f $root/external/gnss-imu-fusion/CMakeLists.txt ]]; then
-  echo "external/gnss-imu-fusion is empty, run: git submodule update --init" >&2
+if [[ ! -f $root/external/localization_core/CMakeLists.txt ]]; then
+  echo "external/localization_core is empty, run: git submodule update --init" >&2
   exit 1
 fi
 build=$root/build-sim
@@ -26,7 +26,7 @@ export GZ_GUI_PLUGIN_PATH="$build/gz_gui_plugins${GZ_GUI_PLUGIN_PATH:+:$GZ_GUI_P
 if $headless; then
   gz sim -s -r "$root/sim/worlds/positioning.sdf" &>"$build/gz.log" &
 else
-  gz sim -r --gui-config "$root/external/gnss-imu-fusion/sim/gui.config" \
+  gz sim -r --gui-config "$root/external/localization_core/sim/gui.config" \
     "$root/sim/worlds/positioning.sdf" &>"$build/gz.log" &
 fi
 gz_pid=$!

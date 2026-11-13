@@ -119,12 +119,12 @@ Q per axis = σ²·[ dt³/3  dt²/2 ; dt²/2  dt ]     σ smaller with imu, larg
 <table>
 <tr><td><code>includes/kalman/position_estimator.hpp</code></td><td><code>estimator_config</code>: every σ, gate and time constant with its current default, the estimate struct, the API</td></tr>
 <tr><td><code>src/kalman/position_estimator.cpp</code></td><td><code>propagate</code>, <code>add_imu_sample</code>, <code>add_gps_fix</code>, <code>predict_ahead</code></td></tr>
-<tr><td><code>external/gnss-imu-fusion/includes/kalman/kalman_filter.hpp</code></td><td>the generic predict / NIS / Joseph update</td></tr>
+<tr><td><code>external/localization_core/includes/kalman/kalman_filter.hpp</code></td><td>the generic predict / NIS / Joseph update</td></tr>
 <tr><td><code>sim/src/positioning_sim.cpp</code></td><td>sensor noise models, flight controller, scoring, markers</td></tr>
 <tr><td><code>test/cpp/kalman/estimator.hpp</code></td><td>behaviour pinned by tests: gating, reset, altitude, vertical IMU</td></tr>
 </table>
 
-<footer>gnss_imu_prediction · part of gnss-imu-fusion, gnss_imu_prediction and drone_localization</footer>
+<footer>gnss_imu_prediction · part of localization_core, gnss_imu_prediction and drone_localization</footer>
 </main>
 </body>
 </html>

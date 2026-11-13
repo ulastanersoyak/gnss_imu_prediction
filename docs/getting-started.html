@@ -64,11 +64,11 @@ footer{margin-top:60px;color:var(--muted);font-size:13px;border-top:1px solid va
 <h2>1. clone with the shared library</h2>
 <pre><code>git clone --recurse-submodules &lt;url&gt;/gnss_imu_prediction
 cd gnss_imu_prediction</code></pre>
-<p>If <code>external/gnss-imu-fusion/</code> is empty (you cloned without <code>--recurse-submodules</code>):</p>
+<p>If <code>external/localization_core/</code> is empty (you cloned without <code>--recurse-submodules</code>):</p>
 <pre><code>git submodule update --init
 # local sibling clones only:
 git -c protocol.file.allow=always submodule update --init</code></pre>
-<div class="note">The build stops with <code>external/gnss-imu-fusion is empty, run: git submodule update --init</code> if you forget.</div>
+<div class="note">The build stops with <code>external/localization_core is empty, run: git submodule update --init</code> if you forget.</div>
 
 <h2>2. build and run the tests</h2>
 <ol class="steps">
@@ -111,11 +111,11 @@ distrobox enter gazebo -- sim/run.sh --headless --duration 120   # terminal only
 
 <h2>4. run it on the device</h2>
 <ol class="steps">
-<li><b>Wire it up.</b> MAX-M10S on uart0 (<code>/dev/ttyAMA0</code>, 9600 baud) and MTi-630 on uart4 (<code>/dev/ttyAMA4</code>, 115200 baud). The steps for enabling the UARTs are in <code>external/gnss-imu-fusion/docs/uart.sh</code>.</li>
+<li><b>Wire it up.</b> MAX-M10S on uart0 (<code>/dev/ttyAMA0</code>, 9600 baud) and MTi-630 on uart4 (<code>/dev/ttyAMA4</code>, 115200 baud). The steps for enabling the UARTs are in <code>external/localization_core/docs/uart.sh</code>.</li>
 <li><b>Configure the IMU</b> in MT Manager: quaternion and free acceleration at 100 Hz, magnetic declination set.</li>
 <li><b>Build on the Pi</b> (with Boost) and run:
 <pre><code>./build/src/main                       # live sensors
-./build/src/main external/gnss-imu-fusion/test/python/get_data/data.txt   # replay a log, no hardware</code></pre></li>
+./build/src/main external/localization_core/test/python/get_data/data.txt   # replay a log, no hardware</code></pre></li>
 <li><b>Read the output.</b> CSV on stdout, one row per GPS fix and 10 rows a second between fixes:
 <pre><code>source,fix_utc,age_s,lat,lon,alt,easting,northing,vel_east,vel_north,vel_up,
 sigma_east,sigma_north,sigma_up,gps_easting,gps_northing,gps_alt,
@@ -134,7 +134,7 @@ ahead_easting,ahead_northing,ahead_alt,status</code></pre>
 <tr><td>heading looks rotated by a few degrees</td><td>magnetic declination not set on the MTi</td></tr>
 </table>
 
-<footer>gnss_imu_prediction · part of gnss-imu-fusion, gnss_imu_prediction and drone_localization</footer>
+<footer>gnss_imu_prediction · part of localization_core, gnss_imu_prediction and drone_localization</footer>
 </main>
 </body>
 </html>
