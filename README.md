@@ -11,8 +11,8 @@ helpers come from [localization_core](external/localization_core), included as a
 git submodule. its sibling project, `drone_localization`, locates the
 same drone from external sensors.
 
-guides: [getting started](docs/getting-started.html) ·
-[how it works](docs/how-it-works.html)
+guides: [getting started](https://ulastanersoyak.github.io/gnss_imu_prediction/getting-started.html) ·
+[how it works](https://ulastanersoyak.github.io/gnss_imu_prediction/how-it-works.html)
 
 ![the gazebo simulation: the drone flying its figure-eight, its ghost one second ahead, the noisy gps fixes and the accuracy overlay](docs/images/simulation.gif)
 

@@ -55,7 +55,7 @@ footer{margin-top:60px;color:var(--muted);font-size:13px;border-top:1px solid va
 <div class="repo">gnss_imu_prediction</div>
 <h1>How it works</h1>
 <p class="lede">How GPS and IMU are fused in a Kalman filter, and how that filter predicts one second ahead.</p>
-<nav class="pages"><a href="getting-started.html">getting started</a><a href="how-it-works.html" class="here">how it works</a><a href="../README.md">readme</a></nav>
+<nav class="pages"><a href="getting-started.html">getting started</a><a href="how-it-works.html" class="here">how it works</a><a href="https://github.com/ulastanersoyak/gnss_imu_prediction">source on github</a></nav>
 </header>
 <p>A GPS receiver tells you where you were, about once a second, give or take a few metres. An IMU tells you how you are accelerating, a hundred times a second, but integrating it drifts away within seconds. A Kalman filter combines the two strengths: the IMU carries the state smoothly between fixes, and each fix pulls it back to the truth. Once you have a good position and velocity, plus the recent measured acceleration, predicting one second ahead is a matter of running the motion model forward without a measurement.</p>
 
