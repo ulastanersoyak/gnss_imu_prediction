@@ -12,9 +12,10 @@
 //
 // Frames come from tf2 (localization_core sim/src/ros_sim.hpp): AirSim's
 // north-west-up world is turned into enu with the static transform
-// airsim.launch.py publishes. AirSim stamps are wall clock time; the
-// estimator gets seconds since the first message, the published estimates
-// keep the original stamps so they line up with the truth (TF enu -> drone).
+// airsim.launch.py publishes. AirSim stamps run on its own clock, behind
+// the wall clock; the estimator gets seconds since the first message, the
+// published estimates keep the original stamps so they line up with the
+// truth (TF enu -> drone).
 //
 // After every IMU sample the filter predicts where the drone will be
 // `horizon` seconds later. That prediction is published stamped with the
@@ -348,7 +349,7 @@ public:
 private:
   // -- ROS callbacks (spin thread): only convert and enqueue --------------
 
-  // Seconds since the first message: AirSim stamps are wall clock time.
+  // Seconds since the first message (AirSim stamps run on its own clock).
   double
   sim_time (const rclcpp::Time &stamp)
   {
