@@ -105,22 +105,23 @@ Q per axis = σ²·[ dt³/3  dt²/2 ; dt²/2  dt ]     σ smaller with imu, larg
 <p>The filter averages GPS noise over many fixes, weighted by how consistent each one is with the IMU motion, and it knows the acceleration, which a fix alone cannot. Altitude is expected to be the hardest axis: it is the noisiest measurement and the only one with no velocity measurement. The simulation prints its own comparison (ghost vs. raw GPS extrapolated, estimate vs. raw fix) when you stop it. Accuracy results are not documented yet while the tuning is in progress.</p>
 
 <h2>the simulation</h2>
-<p><code>sim/worlds/positioning.sdf</code> has a real multirotor model. It tilts to accelerate, so the IMU orientation and gravity removal are exercised the same way as on hardware. <code>positioning_sim</code> connects to Gazebo:</p>
+<p>The drone flies in <a href="https://github.com/Cosys-Lab/Cosys-AirSim">Cosys-AirSim</a> (Unreal Engine), with its SimpleFlight multirotor: it tilts to accelerate, so the IMU orientation and gravity removal are exercised the same way as on hardware. <code>positioning_sim</code> is a ROS 2 node beside AirSim's own ROS 2 node:</p>
 <table>
 <tr><th>topic</th><th>becomes</th></tr>
-<tr><td><code>/drone/imu</code> 100 Hz</td><td><code>Xbus</code> sample with added bias, tilt and heading error → <code>add_imu_sample</code></td></tr>
-<tr><td><code>/drone/navsat</code> 1 Hz</td><td><code>gps_fix</code> with white noise + drift → <code>add_gps_fix</code></td></tr>
-<tr><td><code>/model/drone/pose</code></td><td>ground truth, used only for scoring</td></tr>
-<tr><td><code>/drone/cmd_vel</code></td><td>the bridge flies the figure-eight here (unless <code>--manual</code>)</td></tr>
+<tr><td><code>/airsim_node/drone/imu/imu</code></td><td><code>Xbus</code> sample with added bias, tilt and heading error → <code>add_imu_sample</code></td></tr>
+<tr><td><code>/airsim_node/drone/gps/gps</code> 1 Hz</td><td><code>gps_fix</code> with white noise + drift → <code>add_gps_fix</code></td></tr>
+<tr><td><code>/airsim_node/drone/odom_local</code></td><td>the autopilot's view of the drone, and the receiver's velocity output</td></tr>
+<tr><td><code>/cmd_vel</code></td><td>the program flies the figure-eight here (unless <code>--manual</code>)</td></tr>
+<tr><td><code>/positioning/estimate</code>, <code>/prediction</code>, <code>/baseline</code>, <code>/gps</code></td><td>what the program publishes: the estimate now, the ghost, the raw fix extrapolated, the noisy fix</td></tr>
 </table>
-<p>Each ghost is stored with its target time. When the simulation reaches that time, the ghost is compared to the true pose. That comparison is the error you see. The same <code>position_estimator</code> class runs in <code>src/main.cpp</code> on the device. Only the inputs differ.</p>
+<p>Frames go through tf2: AirSim's north-west-up world becomes east-north-up (<code>enu</code>), and the truth is the TF <code>enu</code> → <code>drone</code>. Each ghost is published stamped with the time it predicts. The run is recorded, and afterwards evo compares every ghost with the true pose at its time; that comparison is the error you see. The same <code>position_estimator</code> class runs in <code>src/main.cpp</code> on the device. Only the inputs differ.</p>
 
 <h2>where to look in the code</h2>
 <table>
 <tr><td><code>includes/kalman/position_estimator.hpp</code></td><td><code>estimator_config</code>: every σ, gate and time constant with its current default, the estimate struct, the API</td></tr>
 <tr><td><code>src/kalman/position_estimator.cpp</code></td><td><code>propagate</code>, <code>add_imu_sample</code>, <code>add_gps_fix</code>, <code>predict_ahead</code></td></tr>
 <tr><td><code>external/localization_core/includes/kalman/kalman_filter.hpp</code></td><td>the generic predict / NIS / Joseph update</td></tr>
-<tr><td><code>sim/src/positioning_sim.cpp</code></td><td>sensor noise models, flight controller, scoring, markers</td></tr>
+<tr><td><code>sim/src/positioning_sim.cpp</code></td><td>the ROS 2 node: sensor noise models, flight controller, the published estimates, markers</td></tr>
 <tr><td><code>test/cpp/kalman/estimator.hpp</code></td><td>behaviour pinned by tests: gating, reset, altitude, vertical IMU</td></tr>
 </table>
 

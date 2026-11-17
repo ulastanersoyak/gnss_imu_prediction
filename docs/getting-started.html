@@ -54,12 +54,10 @@ footer{margin-top:60px;color:var(--muted);font-size:13px;border-top:1px solid va
 <header class="top">
 <div class="repo">gnss_imu_prediction</div>
 <h1>Getting started</h1>
-<p class="lede">From a fresh clone to the one-second ghost in Gazebo, then to the real sensors on a Raspberry Pi.</p>
+<p class="lede">From a fresh clone to the one-second ghost in Cosys-AirSim, then to the real sensors on a Raspberry Pi.</p>
 <nav class="pages"><a href="getting-started.html" class="here">getting started</a><a href="how-it-works.html">how it works</a><a href="https://github.com/ulastanersoyak/gnss_imu_prediction">source on github</a></nav>
 </header>
-<p>This guide takes you from a fresh clone to the 1-second-ahead “ghost” flying beside the drone in Gazebo, and then to the same filter running on a Raspberry Pi with a real receiver and IMU.</p>
-
-<figure><img src="images/simulation.gif" alt="the drone flying a figure-eight with its green ghost one second ahead"><figcaption>What you will have at the end of step 3.</figcaption></figure>
+<p>This guide takes you from a fresh clone to the 1-second-ahead “ghost” flying beside the drone in <a href="https://github.com/Cosys-Lab/Cosys-AirSim">Cosys-AirSim</a> (a drone simulator for Unreal Engine, over ROS 2), and then to the same filter running on a Raspberry Pi with a real receiver and IMU.</p>
 
 <h2>1. clone with the shared library</h2>
 <pre><code>git clone --recurse-submodules &lt;url&gt;/gnss_imu_prediction
@@ -84,19 +82,23 @@ cmake --build build -j</code></pre>
 
 <h2>3. run the simulation</h2>
 <ol class="steps">
-<li><b>Get Gazebo Harmonic.</b> On Ubuntu 24.04 install <code>gz-harmonic</code> from packages.osrfoundation.org. On Fedora use a distrobox:
-<pre><code>distrobox create --name gazebo --image ubuntu:24.04
-distrobox enter gazebo
-# inside: follow gazebosim.org's harmonic install for ubuntu, then
-sudo apt install cmake g++ libboost-dev qtbase5-dev qtdeclarative5-dev</code></pre></li>
-<li><b>Start it.</b> <code>run.sh</code> builds into <code>build-sim/</code>, starts Gazebo with the shared GUI layout and the overlay plugin, then runs the bridge:
-<pre><code>distrobox enter gazebo -- sim/run.sh                             # with the window
-distrobox enter gazebo -- sim/run.sh --headless --duration 120   # terminal only</code></pre></li>
-<li><b>Watch it.</b> The drone takes off and flies a figure-eight. The <span style="color:var(--ok)">green box</span> is where the filter says it will be in one second. It turns yellow, then red, as the error grows. Orange spheres show where an earlier ghost said the drone would be now, and yellow dots are the noisy GPS fixes. The terminal prints the running error once per simulated second.</li>
-<li><b>Stop with Ctrl-C</b> to get the summary table: ghost vs. raw GPS extrapolated, the current-position estimate vs. the raw fix, and the vertical-only rows.</li>
+<li><b>Set up the simulator (once).</b> It lives in localization_core: Unreal Engine 5.2 on the host (in <code>~/UnrealEngine/5.2</code>) and ROS 2 Jazzy in a <code>ros2</code> distrobox (Ubuntu 24.04). The setup script patches and builds Cosys-AirSim, builds AirSim's ROS 2 node in the box and generates the maps (an open field and Antwerp's city centre); <code>external/localization_core/airsim/README.md</code> explains what it does.
+<pre><code>distrobox create --name ros2 --image ubuntu:24.04    # then install ROS 2 Jazzy inside
+cd external/localization_core
+git submodule update --init --depth 1 external/Cosys-AirSim
+airsim/setup.sh</code></pre></li>
+<li><b>Start it.</b> <code>run.sh</code> builds <code>positioning_sim</code> in the box, starts Unreal, then one ROS 2 launch file: AirSim's ROS 2 node, <code>positioning_sim</code> and a recorder.
+<pre><code>sim/run.sh                                   # the open field, Unreal window
+sim/run.sh --no-gui --duration 120           # no window
+sim/run.sh --scenario antwerp --rain 0.6     # over Antwerp's city centre, in rain</code></pre></li>
+<li><b>Watch it.</b> The drone takes off and flies a figure-eight. In <code>rviz2</code> (fixed frame <code>enu</code>, topic <code>/positioning/markers</code>) the <span style="color:var(--ok)">green box</span> is where the filter says it will be in one second, the orange sphere where an earlier ghost said the drone would be now, and the yellow dots the noisy GPS fixes. The terminal prints the latest prediction error once per second.</li>
+<li><b>At the end</b> (<code>--duration</code> or Ctrl-C) the recording is scored against AirSim's true pose with <a href="https://github.com/MichaelGrupp/evo">evo</a>: the ghost vs. the raw GPS extrapolated, the current-position estimate vs. the raw fix, with the vertical error. Each run is kept in <code>build-ros/runs/</code>; plot one with evo:
+<pre><code>distrobox enter ros2 -- bash -c '. /opt/ros/jazzy/setup.bash &amp;&amp; external/localization_core/airsim/.venv/bin/evo_ape \
+    bag2 build-ros/runs/&lt;run&gt; /tf:enu.drone /positioning/prediction --plot'</code></pre></li>
 </ol>
 
 <h3>things to try</h3>
+<p>The options are <code>positioning_sim</code>'s ROS parameters, written <code>--name value</code>.</p>
 <table>
 <tr><th>command</th><th>what you learn</th></tr>
 <tr><td><code>--horizon 0.5</code> / <code>--horizon 2</code></td><td>how the prediction error grows with the horizon</td></tr>
@@ -105,9 +107,10 @@ distrobox enter gazebo -- sim/run.sh --headless --duration 120   # terminal only
 <tr><td><code>--heading-error 5</code></td><td>what a poorly calibrated magnetometer does to the horizontal ghost</td></tr>
 <tr><td><code>--accel-bias 0.2</code></td><td>accelerometer bias shows up mostly in the vertical estimate</td></tr>
 <tr><td><code>--radius 6 --altitude-swing 5</code></td><td>tighter turns and steeper climbs: harder to predict</td></tr>
-<tr><td><code>--manual</code></td><td>fly it yourself on <code>/drone/cmd_vel</code> (see the comment at the top of the shared <code>sim/gui.config</code>)</td></tr>
+<tr><td><code>--wind 8@270</code></td><td>AirSim's wind pushes the drone: motion the autopilot did not command</td></tr>
+<tr><td><code>--manual</code></td><td>fly it yourself: <code>external/localization_core/airsim/keyboard.sh</code> publishes <code>/cmd_vel</code></td></tr>
 </table>
-<p>All options: <code>build-sim/sim/positioning_sim --help</code> or the table in the README.</p>
+<p>All options: the table in the README, or <code>ros2 param describe /positioning_sim &lt;name&gt;</code> while it runs.</p>
 
 <h2>4. run it on the device</h2>
 <ol class="steps">
@@ -128,8 +131,7 @@ ahead_easting,ahead_northing,ahead_alt,status</code></pre>
 <table>
 <tr><th>symptom</th><th>cause</th></tr>
 <tr><td>configure fails about the submodule</td><td>run <code>git submodule update --init</code></td></tr>
-<tr><td>no overlay text in Gazebo</td><td>gz-gui8 or Qt5 dev packages missing when <code>build-sim</code> was configured. Install them and delete <code>build-sim/CMakeCache.txt</code>.</td></tr>
-<tr><td>Gazebo window does not open in the distrobox</td><td>check <code>build-sim/gz.log</code>. The display must be shared with the container.</td></tr>
+<tr><td>the simulation does not start</td><td>run <code>external/localization_core/airsim/setup.sh</code> first; Unreal's log is in <code>external/localization_core/airsim/unreal/Saved/Logs/</code>, the ROS nodes' in <code>~/.ros/log/latest/</code></td></tr>
 <tr><td>on the device, vertical drift that grows steadily</td><td>no free acceleration output and a wrong gravity value. Enable free acceleration or set <code>estimator_config::gravity_mps2</code>.</td></tr>
 <tr><td>heading looks rotated by a few degrees</td><td>magnetic declination not set on the MTi</td></tr>
 </table>
