@@ -14,8 +14,6 @@ same drone from external sensors.
 guides: [getting started](https://ulastanersoyak.github.io/gnss_imu_prediction/getting-started.html) ·
 [how it works](https://ulastanersoyak.github.io/gnss_imu_prediction/how-it-works.html)
 
-![the gazebo simulation: the drone flying its figure-eight, its ghost one second ahead, the noisy gps fixes and the accuracy overlay](docs/images/simulation.gif)
-
 ## how it works
 
 ```
@@ -46,9 +44,9 @@ mti-630 ─── xbus (115200 baud) ─▶ mtdata2 parser ───────
 |---|---|
 | `includes/kalman/`, `src/kalman/` | `position_estimator`, the filter and the prediction (target `kalman`) |
 | `src/main.cpp` | the device program, prints the estimate as csv |
-| `sim/` | gazebo simulation: world, bridge program, run script |
+| `sim/` | simulation: `positioning_sim` (a ros 2 node for cosys-airsim), its launch file and run script |
 | `test/cpp/` | unit tests of the estimator |
-| `external/localization_core/` | submodule: parsers, utm, imu, gps, serial port, matrix, gui overlay, `sim/gui.config` |
+| `external/localization_core/` | submodule: parsers, utm, imu, gps, serial port, matrix, the simulator side (`airsim/`) |
 | `docs/` | the html guides, the kalman paper used, images |
 
 ## building
@@ -85,27 +83,47 @@ and set the magnetic declination, otherwise north is magnetic north.
 
 ## simulation
 
-a quadrotor takes off and flies a figure-eight in gazebo harmonic while its
-speed swings between 1 and 4 m/s and its height between 5 and 11 m. it
-carries a 100 hz imu and a 1 hz gps with 1.5 m of horizontal noise. the
-flight is real multirotor physics: it tilts to accelerate, so the imu
-orientation and the gravity removal are exercised. `positioning_sim` feeds
-the sensors to the same `position_estimator` the device uses, draws the
-prediction as a green "ghost" in front of the drone, and scores every
-prediction against the true pose once the simulation reaches that moment.
+a quadrotor takes off and flies a figure-eight in
+[Cosys-AirSim](https://github.com/Cosys-Lab/Cosys-AirSim) (Unreal Engine)
+while its speed swings between 1 and 4 m/s and its height between 5 and 11 m.
+it carries a 100 hz imu (50 hz from airsim's ros 2 node) and a 1 hz gps;
+`positioning_sim` adds 1.5 m of horizontal gps noise and imu bias and
+orientation errors. it is a ROS 2 node: it feeds the sensors to the same
+`position_estimator` the device uses, publishes the prediction as a "ghost"
+marker in front of the drone, and scores every prediction against the true
+pose once the simulation reaches that moment.
 
 ```
-distrobox enter gazebo -- sim/run.sh                                  # with the gazebo window
-distrobox enter gazebo -- sim/run.sh --headless --duration 120        # terminal only
-distrobox enter gazebo -- sim/run.sh --horizon 0.5 --gps-noise 3 --gps-drift 2
+sim/run.sh                                         # the open field, unreal window
+sim/run.sh --scenario antwerp                      # over groenplaats in antwerp's 3d city model
+sim/run.sh --no-gui --duration 120                 # no window, stop after 120 simulated s
+sim/run.sh --rain 0.6 --fog 0.2 --wind 6@270       # airsim's weather, wind from the west
+sim/run.sh --horizon 0.5 --gps-noise 3 --gps-drift 2
+sim/run.sh --manual                                # fly it yourself: localization_core/airsim/keyboard.sh
 ```
 
-`run.sh` builds into `build-sim/`, starts gazebo and runs the bridge; ctrl-c
-prints the summary. on fedora gazebo lives in the `gazebo` distrobox (ubuntu
-24.04 with `gz-harmonic` from packages.osrfoundation.org). options:
+the simulator side (unreal, cosys-airsim, its ros 2 node, the maps) lives in
+localization_core: run `external/localization_core/airsim/setup.sh` once
+(see [localization_core/airsim](external/localization_core/airsim/README.md)).
+`run.sh` builds `positioning_sim` into `build-ros/` in the `ros2` distrobox
+(ubuntu 24.04, ros 2 jazzy), starts unreal, then `sim/launch/positioning.launch.py`
+(airsim's ros 2 node, the program and a rosbag2 recorder). the run is
+recorded into `build-ros/runs/positioning-<scenario>-<time>` and, when it
+ends (`--duration` or ctrl-c), scored against airsim's true pose by
+localization_core's `airsim/evaluate.py` (evo); evo's own tools plot the same
+recording (see localization_core/airsim). while localization_core
+is not committed and the submodule not updated, run with
+`LOCALIZATION_CORE_DIR=../localization_core`. the options are
+`positioning_sim`'s ros 2 parameters (`--gps-noise 3` becomes
+`gps_noise:=3`; `ros2 param describe /positioning_sim gps_noise` explains
+one):
 
 | option | default | |
 |---|---|---|
+| `--scenario s` | field | `field` (the recorded data's site) or `antwerp` |
+| `--no-gui` | | unreal without a window |
+| `--rain/--snow/--fog/--dust i` | | airsim weather, 0..1 |
+| `--wind s[@from_deg]` | | wind speed m/s, from this direction (225 = south-west) |
 | `--horizon s` | 1.0 | how far ahead the ghost predicts (0.01 = next imu sample) |
 | `--gps-noise m` | 1.5 | white gps position noise |
 | `--gps-drift m` | 0 | slowly wandering gps error, like multipath |
@@ -117,42 +135,19 @@ prints the summary. on fedora gazebo lives in the `gazebo` distrobox (ubuntu
 | `--radius m` | 12 | figure-eight loop radius |
 | `--altitude m` | 8 | cruise height above the ground |
 | `--altitude-swing m` | 3 | how far it climbs and descends around the cruise height |
-| `--manual` | | don't fly; command `/drone/cmd_vel` by hand (see `sim/gui.config`) |
-| `--no-follow` | | don't move the camera with the drone |
+| `--manual` | | don't fly; publish `/cmd_vel` yourself (airsim/keyboard.sh) |
 
-![close up: the ghost on the drone, and the orange sphere where an earlier ghost said it would be](docs/images/ghost_closeup.png)
+the estimates are published as `geometry_msgs/PoseStamped` in the `enu`
+frame: `/positioning/estimate` (now), `/positioning/prediction` (the ghost,
+stamped with the time it predicts), `/positioning/baseline` and
+`/positioning/gps` (the noisy fixes). the ghost and the gps fixes are also
+drawn as `visualization_msgs/Marker` on `/positioning/markers` (rviz2 with
+fixed frame `enu`), and the program prints the latest prediction error every
+second.
 
 what is drawn:
 
-- **green box**: the predicted pose, turning yellow then red as the latest
-  prediction error grows
+- **green box**: the predicted pose
 - **orange sphere and red line**: where an earlier ghost said the vehicle
   would be now, and how far off it was
 - **yellow dots**: the last 20 noisy gps fixes, at their noisy altitude
-- **top left overlay**: live accuracy, from the accuracy overlay gui plugin
-  in `external/localization_core/sim/gui_plugin/`
-
-### results
-
-120 simulated seconds, 1.5 m horizontal and 2.55 m vertical gps noise, 1 s
-horizon (metres):
-
-| | 3d mean | 3d p95 | vertical mean |
-|---|---|---|---|
-| ghost (kalman prediction, 1 s ahead) | 2.04 | 4.56 | 1.84 |
-| raw gps fix extrapolated 1 s with its own velocity | 3.33 | 7.04 | 2.29 |
-| kalman estimate of the current position | 1.76 | 3.95 | 1.55 |
-| raw gps fix | 3.21 | 6.66 | 2.28 |
-
-mean is the typical error. p95 is the 95th percentile: 95% of the errors
-were at or below it and only the worst 5% were above, so it shows how bad
-the less common cases (sharp turns, sudden speed changes) get without being
-set by a single outlier like the maximum is.
-
-the extrapolated raw fix is given the true climb rate plus noise, which a
-real nmea receiver does not report, so it is a generous comparison.
-
-most of the error is vertical, because altitude is the noisiest measurement
-and, unlike the horizontal axes, has no velocity measurement to help it.
-with noise free gps the kalman altitude stays within about 0.1 m, so what
-limits it is the gps altitude noise, not the imu or the prediction.
