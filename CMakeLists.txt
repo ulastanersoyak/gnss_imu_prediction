@@ -13,8 +13,6 @@ endif()
 include(${localization_core_dir}/cmake/common.cmake)
 add_subdirectory(${localization_core_dir} ${CMAKE_BINARY_DIR}/localization_core)
 
-find_package(Threads REQUIRED)
-
 add_subdirectory(src)
 
 enable_testing()
