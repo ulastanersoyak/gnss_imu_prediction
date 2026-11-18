@@ -1,8 +1,8 @@
 // A ROS 2 node between Cosys-AirSim (its airsim_ros_pkgs node) and the
 // position estimator (localization_core airsim/):
 //
-//   /airsim_node/drone/imu/imu     (sensor_msgs/Imu)       -> Xbus    -> add_imu_sample
-//   /airsim_node/drone/gps/gps     (sensor_msgs/NavSatFix) -> gps_fix -> add_gps_fix
+//   /airsim_node/drone/imu/imu     (sensor_msgs/Imu)       -> imu_sample -> add_imu_sample
+//   /airsim_node/drone/gps/gps     (sensor_msgs/NavSatFix) -> gps_fix    -> add_gps_fix
 //   /airsim_node/drone/odom_local  (nav_msgs/Odometry)     -> the autopilot,
 //                                  velocity for the GPS fix
 //   /cmd_vel (geometry_msgs/Twist, body frame) <- the figure-eight autopilot
@@ -29,7 +29,7 @@
 #include "ros_sim.hpp"
 
 #include "kalman/position_estimator.hpp"
-#include "kalman/sensor_event.hpp"
+#include "kalman/measurements.hpp"
 #include "utility/queue.hpp"
 
 #include <GeographicLib/LocalCartesian.hpp>
@@ -143,17 +143,6 @@ read_options (rclcpp::Node &node)
   return o;
 }
 
-utc
-to_utc (double sim_seconds)
-{
-  const auto ms_total = static_cast<std::uint64_t> (sim_seconds * 1000.0);
-  const auto ms_of_day = ms_total % 86400000ULL;
-  return utc{ static_cast<std::uint8_t> (ms_of_day / 3600000),
-              static_cast<std::uint8_t> ((ms_of_day / 60000) % 60),
-              static_cast<std::uint8_t> ((ms_of_day / 1000) % 60),
-              static_cast<std::uint16_t> (ms_of_day % 1000) };
-}
-
 // Rotation by the angle |r| about the axis r.
 Eigen::Quaterniond
 from_rotation_vector (const vec3 &r)
@@ -169,7 +158,7 @@ struct imu_event
 {
   double t;
   rclcpp::Time stamp;
-  Xbus sample;
+  imu_sample sample;
 };
 
 struct navsat_event
@@ -374,22 +363,13 @@ private:
     Eigen::Quaterniond q;
     tf2::fromMsg (msg.orientation, q);
     q = Eigen::Quaterniond (world->rotation ()) * q;
-    Xbus sample{};
-    sample.quat = { q.w (), q.x (), q.y (), q.z () };
-    sample.quaternionAvailable = true;
-    sample.quatFrame = xbus_frame::ENU;
-    sample.convertQuatToEuler ();
-    // Specific force and rate are in the body frame (forward, left, up),
-    // the frame the estimator expects.
+    imu_sample sample{};
+    sample.time_s = t;
+    sample.orientation = q;
+    // Specific force is in the body frame (forward, left, up), the frame the
+    // estimator expects.
     const auto &a = msg.linear_acceleration;
-    sample.acc = { a.x, a.y, a.z };
-    sample.accAvailable = true;
-    const auto &w = msg.angular_velocity;
-    sample.rot = { w.x, w.y, w.z };
-    sample.rotAvailable = true;
-    sample.sampleTimeFine
-        = static_cast<std::uint32_t> (std::llround (t * Xbus::sampleTimeFineHz));
-    sample.sampleTimeFineAvailable = true;
+    sample.specific_force = { a.x, a.y, a.z };
     events_.push (imu_event{ t, stamp, sample });
   }
 
@@ -455,7 +435,7 @@ private:
   // The IMU model: AirSim gives white noise and the exact orientation, a
   // real AHRS also has bias and orientation error. A tilt error leaks
   // gravity into the horizontal acceleration.
-  [[nodiscard]] Xbus
+  [[nodiscard]] imu_sample
   with_imu_errors (const imu_event &e)
   {
     const vec3 sigma{ opt_.tilt_error_deg * deg, opt_.tilt_error_deg * deg,
@@ -471,18 +451,11 @@ private:
                                    * error_noise_ (error_rng_));
       }
 
-    Xbus sample = e.sample;
-    for (std::size_t i = 0; i < 3; ++i)
-      {
-        sample.acc[i] += accel_bias_[static_cast<int> (i)];
-      }
-    // The quaternion maps sensor to local, so the local frame error goes on
+    imu_sample sample = e.sample;
+    sample.specific_force += accel_bias_;
+    // The orientation maps sensor to local, so the local frame error goes on
     // the left.
-    const auto &[w, x, y, z] = sample.quat;
-    const Eigen::Quaterniond q
-        = from_rotation_vector (orientation_error_) * Eigen::Quaterniond (w, x, y, z);
-    sample.quat = { q.w (), q.x (), q.y (), q.z () };
-    sample.convertQuatToEuler ();
+    sample.orientation = from_rotation_vector (orientation_error_) * sample.orientation;
     return sample;
   }
 
@@ -553,9 +526,10 @@ private:
     const double speed = std::hypot (v_east, v_north);
 
     gps_fix fix{};
+    fix.time_s = e.t;
     try
       {
-        fix.position = utm (e.lat, e.lon, to_utc (e.t));
+        fix.position = utm (e.lat, e.lon);
       }
     catch (const std::exception &ex)
       {

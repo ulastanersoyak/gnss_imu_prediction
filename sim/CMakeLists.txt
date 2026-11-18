@@ -14,8 +14,7 @@ find_package(GeographicLib REQUIRED)
 
 add_executable(positioning_sim src/positioning_sim.cpp)
 target_include_directories(positioning_sim PRIVATE ${GeographicLib_INCLUDE_DIRS})
-target_link_libraries(positioning_sim PRIVATE kalman utm xbus rmc
-                      time_and_location localization_core_sim
+target_link_libraries(positioning_sim PRIVATE kalman utm localization_core_sim
                       rclcpp::rclcpp tf2_ros::tf2_ros tf2_eigen::tf2_eigen
                       Eigen3::Eigen ${GeographicLib_LIBRARIES}
                       ${sensor_msgs_TARGETS} ${nav_msgs_TARGETS}
