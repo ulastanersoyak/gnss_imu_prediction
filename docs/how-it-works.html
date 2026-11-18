@@ -61,7 +61,7 @@ footer{margin-top:60px;color:var(--muted);font-size:13px;border-top:1px solid va
 
 <h2>the state</h2>
 <div class="math">x = [ east, north, up, v_east, v_north, v_up ]      (UTM grid of the first fix, metres)</div>
-<p>P, a 6×6 covariance, holds how sure the filter is about each element and how the elements correlate. NMEA has no vertical velocity, so <code>v_up</code> is learned only from the accelerometer and from successive altitudes.</p>
+<p>P, a 6×6 covariance, holds how sure the filter is about each element and how the elements correlate. A receiver reports no vertical velocity, so <code>v_up</code> is learned only from the accelerometer and from successive altitudes.</p>
 
 <h2>one cycle</h2>
 <figure>
@@ -85,7 +85,7 @@ footer{margin-top:60px;color:var(--muted);font-size:13px;border-top:1px solid va
 </figure>
 
 <h3>predict, on every IMU sample (100 Hz)</h3>
-<p>The IMU acceleration, already rotated to east/north/up with gravity removed by the shared <code>xbus</code> library, then rotated by the grid convergence into UTM-grid axes, is the control input of a constant-velocity model:</p>
+<p>The IMU acceleration, rotated to east/north/up with gravity removed (<code>imu_sample::acceleration_enu</code>, from localization_core), then rotated by the grid convergence into UTM-grid axes, is the control input of a constant-velocity model:</p>
 <div class="math">p ← p + v·dt + ½·a·dt²        v ← v + a·dt
 Q per axis = σ²·[ dt³/3  dt²/2 ; dt²/2  dt ]     σ smaller with imu, larger without</div>
 <p>Q is the uncertainty added because the acceleration is not known exactly. Without an IMU the filter still runs, but with a larger σ standing in for unknown manoeuvres.</p>
@@ -108,7 +108,7 @@ Q per axis = σ²·[ dt³/3  dt²/2 ; dt²/2  dt ]     σ smaller with imu, larg
 <p>The drone flies in <a href="https://github.com/Cosys-Lab/Cosys-AirSim">Cosys-AirSim</a> (Unreal Engine), with its SimpleFlight multirotor: it tilts to accelerate, so the IMU orientation and gravity removal are exercised the same way as on hardware. <code>positioning_sim</code> is a ROS 2 node beside AirSim's own ROS 2 node:</p>
 <table>
 <tr><th>topic</th><th>becomes</th></tr>
-<tr><td><code>/airsim_node/drone/imu/imu</code></td><td><code>Xbus</code> sample with added bias, tilt and heading error → <code>add_imu_sample</code></td></tr>
+<tr><td><code>/airsim_node/drone/imu/imu</code></td><td><code>imu_sample</code> with added bias, tilt and heading error → <code>add_imu_sample</code></td></tr>
 <tr><td><code>/airsim_node/drone/gps/gps</code> 1 Hz</td><td><code>gps_fix</code> with white noise + drift → <code>add_gps_fix</code></td></tr>
 <tr><td><code>/airsim_node/drone/odom_local</code></td><td>the autopilot's view of the drone, and the receiver's velocity output</td></tr>
 <tr><td><code>/cmd_vel</code></td><td>the program flies the figure-eight here (unless <code>--manual</code>)</td></tr>

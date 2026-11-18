@@ -1,15 +1,15 @@
 # gnss_imu_prediction
 
-3d position estimation and short term position prediction for a raspberry pi
-4 carrying a u-blox max-m10s gnss receiver and an xsens mti-630 imu. gps fixes
-(1 hz) and imu acceleration (100 hz) are fused in a kalman filter, which
-gives a smoother position and altitude than the raw receiver and predicts
-where the device will be a moment later.
+3d position estimation and short term position prediction from a gnss
+receiver and an imu, in simulation (cosys-airsim on unreal engine 5.2, ros 2
+jazzy). gps fixes (1 hz) and imu acceleration (100 hz) are fused in a kalman
+filter, which gives a smoother position and altitude than the raw receiver and
+predicts where the drone will be a moment later.
 
-the parsers, utm conversion, imu driver, matrix/kalman core and simulation
-helpers come from [localization_core](external/localization_core), included as a
-git submodule. its sibling project, `drone_localization`, locates the
-same drone from external sensors.
+the utm conversion, kalman core, measurement types and the simulator side come
+from [localization_core](external/localization_core), included as a git
+submodule. its sibling project, `drone_localization`, locates the same drone
+from external sensors.
 
 guides: [getting started](https://ulastanersoyak.github.io/gnss_imu_prediction/getting-started.html) ·
 [how it works](https://ulastanersoyak.github.io/gnss_imu_prediction/how-it-works.html)
@@ -17,18 +17,15 @@ guides: [getting started](https://ulastanersoyak.github.io/gnss_imu_prediction/g
 ## how it works
 
 ```
-max-m10s ── nmea (9600 baud) ──▶ rmc/gga parser ──▶ utm ──┐
-                                                          ├──▶ queue ──▶ kalman filter ──▶ estimate + prediction
-mti-630 ─── xbus (115200 baud) ─▶ mtdata2 parser ─────────┘
+airsim gps  (navsat fix, 1 hz) ──▶ receiver error model ──▶ utm ──┐
+                                                                  ├──▶ kalman filter ──▶ estimate + prediction
+airsim imu  (100 hz) ─────────▶ ahrs error model ─────────────────┘
 ```
 
-- **gps**: `$..rmc` sentences give position, speed and course; `$..gga`
-  gives the altitude and the hdop, which sets how much each fix is trusted.
-  each rmc is held until the gga of the same epoch arrives. sentences are
-  checksum verified and converted to utm metres.
-- **imu**: mtdata2 packets give the orientation quaternion and the
-  acceleration (or the gravity free acceleration if enabled), rotated into
-  the local east/north/up frame with gravity removed.
+- **gps**: each fix gives position, altitude, speed and course; the hdop sets
+  how much it is trusted. positions are converted to utm metres.
+- **imu**: specific force and orientation, rotated into the local
+  east/north/up frame with gravity removed.
 - **filter**: state is `[east, north, up, v_east, v_north, v_up]`. every imu
   sample predicts the state forward with the measured acceleration, every gps
   fix corrects it. nmea has no vertical velocity, so the climb rate comes from
@@ -43,17 +40,17 @@ mti-630 ─── xbus (115200 baud) ─▶ mtdata2 parser ───────
 | path | what |
 |---|---|
 | `includes/kalman/`, `src/kalman/` | `position_estimator`, the filter and the prediction (target `kalman`) |
-| `src/main.cpp` | the device program, prints the estimate as csv |
 | `sim/` | simulation: `positioning_sim` (a ros 2 node for cosys-airsim), its launch file and run script |
 | `test/cpp/` | unit tests of the estimator |
-| `external/localization_core/` | submodule: parsers, utm, imu, gps, serial port, matrix, the simulator side (`airsim/`) |
+| `external/localization_core/` | submodule: utm, the kalman core, the measurement types, the simulator side (`airsim/`) |
 | `docs/` | the html guides, the kalman paper used, images |
 
 ## building
 
-needs cmake ≥ 3.22 and a c++20 compiler. boost (asio, headers only) is only
-needed for the device program; without it the libraries and tests still
-build.
+needs cmake ≥ 3.22, a c++20 compiler, eigen and geographiclib (fedora:
+`eigen3-devel GeographicLib-devel`, ubuntu: `libeigen3-dev
+libgeographiclib-dev`); the simulation builds in the `ros2` distrobox set up
+by `external/localization_core/airsim/setup.sh`.
 
 ```
 git clone --recurse-submodules <url>/gnss_imu_prediction
@@ -66,21 +63,6 @@ ctest --test-dir build
 for local clones side by side, git refuses `file://` submodules by default:
 `git -c protocol.file.allow=always submodule update --init`.
 
-## running on the device
-
-```
-./build/src/main                                   # live: gps on uart0, imu on uart4
-./build/src/main external/localization_core/test/python/get_data/data.txt   # replay a recorded nmea log
-```
-
-output is csv on stdout: the estimate (lat/lon, altitude and utm), velocity,
-uncertainty, the raw gps fix and the position predicted one second ahead.
-if the imu port cannot be opened it runs on gps only. `external/localization_core/docs/uart.sh` has the
-notes for enabling the uarts on the pi.
-
-for the best imu input, enable the free acceleration output in mt manager
-and set the magnetic declination, otherwise north is magnetic north.
-
 ## simulation
 
 a quadrotor takes off and flies a figure-eight in
@@ -89,7 +71,7 @@ while its speed swings between 1 and 4 m/s and its height between 5 and 11 m.
 it carries a 100 hz imu (50 hz from airsim's ros 2 node) and a 1 hz gps;
 `positioning_sim` adds 1.5 m of horizontal gps noise and imu bias and
 orientation errors. it is a ROS 2 node: it feeds the sensors to the same
-`position_estimator` the device uses, publishes the prediction as a "ghost"
+`position_estimator` the tests check, publishes the prediction as a "ghost"
 marker in front of the drone, and scores every prediction against the true
 pose once the simulation reaches that moment.
 
@@ -111,16 +93,14 @@ localization_core: run `external/localization_core/airsim/setup.sh` once
 recorded into `build-ros/runs/positioning-<scenario>-<time>` and, when it
 ends (`--duration` or ctrl-c), scored against airsim's true pose by
 localization_core's `airsim/evaluate.py` (evo); evo's own tools plot the same
-recording (see localization_core/airsim). while localization_core
-is not committed and the submodule not updated, run with
-`LOCALIZATION_CORE_DIR=../localization_core`. the options are
+recording (see localization_core/airsim). the options are
 `positioning_sim`'s ros 2 parameters (`--gps-noise 3` becomes
 `gps_noise:=3`; `ros2 param describe /positioning_sim gps_noise` explains
 one):
 
 | option | default | |
 |---|---|---|
-| `--scenario s` | field | `field` (the recorded data's site) or `antwerp` |
+| `--scenario s` | field | `field` (an open field) or `antwerp` |
 | `--no-gui` | | unreal without a window |
 | `--rain/--snow/--fog/--dust i` | | airsim weather, 0..1 |
 | `--wind s[@from_deg]` | | wind speed m/s, from this direction (225 = south-west) |
