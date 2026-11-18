@@ -16,9 +16,8 @@ gps_fix
 make_fix (double easting, double northing, int second, double speed_mps = 0,
           std::optional<double> course = std::nullopt)
 {
-  const utc time{ 7, static_cast<std::uint8_t> (second / 60),
-                  static_cast<std::uint8_t> (second % 60) };
-  return gps_fix{ .position = utm (easting, northing, 36, 'S', time),
+  return gps_fix{ .time_s = static_cast<double> (second),
+                  .position = utm (easting, northing, 36, 'S'),
                   .speed_mps = speed_mps,
                   .course_deg = course,
                   .hdop = 1.0 };
@@ -113,10 +112,8 @@ estimator_imu_test ()
   using namespace kalman_test;
 
   position_estimator estimator{};
-  Xbus sample{};
-  sample.sampleTimeFineAvailable = true;
-  sample.freeAccAvailable = true;
-  sample.freeAcc = { 1.0, 0.0, 0.0 };
+  imu_sample sample{};
+  sample.specific_force = { 1.0, 0.0, standard_gravity_mps2 };
 
   check (!estimator.add_imu_sample (sample),
          "imu ignored before the first fix");
@@ -124,9 +121,9 @@ estimator_imu_test ()
   const double sigma_before = estimator.estimate ()->sigma_east_m;
 
   // 1 s at 100 Hz of 1 m/s^2 eastward acceleration.
-  for (std::uint32_t i = 1; i <= 100; ++i)
+  for (int i = 1; i <= 100; ++i)
     {
-      sample.sampleTimeFine = i * 100;
+      sample.time_s = i * 0.01;
       check (estimator.add_imu_sample (sample), "imu sample used");
     }
 
@@ -235,15 +232,11 @@ estimator_vertical_imu_test ()
   fix.altitude_m = 100.0;
   (void)estimator.add_gps_fix (fix);
 
-  Xbus sample{};
-  sample.accAvailable = true;
-  sample.acc = { 0.0, 0.0, 9.8 + 2.0 };
-  sample.quaternionAvailable = true;
-  sample.quat = { 1.0, 0.0, 0.0, 0.0 };
-  sample.sampleTimeFineAvailable = true;
-  for (std::uint32_t i = 1; i <= 100; ++i)
+  imu_sample sample{};
+  sample.specific_force = { 0.0, 0.0, 9.8 + 2.0 };
+  for (int i = 1; i <= 100; ++i)
     {
-      sample.sampleTimeFine = i * 100;
+      sample.time_s = i * 0.01;
       (void)estimator.add_imu_sample (sample);
     }
 

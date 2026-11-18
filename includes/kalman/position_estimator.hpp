@@ -2,9 +2,9 @@
 #define POSITION_ESTIMATOR_HPP
 
 #include "kalman/kalman_filter.hpp"
-#include "kalman/sensor_event.hpp"
+#include "kalman/measurements.hpp"
 
-#include <array>
+#include <cstddef>
 #include <cstdint>
 #include <optional>
 
@@ -42,14 +42,14 @@ struct estimator_config
 
   double imu_nominal_dt_s{ 0.01 }; // 100 Hz
   double imu_max_dt_s{ 0.5 };
-  // Subtracted from the accelerometer when there is no free acceleration
-  // output. An error here is a constant vertical acceleration bias.
-  double gravity_mps2{ Xbus::standardGravity };
+  // Subtracted from the accelerometer. An error here is a constant vertical
+  // acceleration bias.
+  double gravity_mps2{ standard_gravity_mps2 };
 };
 
 struct position_estimate
 {
-  utm position{};         // time is the time of the latest GPS fix
+  utm position{};
   double altitude_m{ 0 }; // same reference as gps_fix::altitude_m
   double age_s{ 0 };      // seconds of prediction since that fix
   double velocity_east_mps{ 0 };
@@ -82,7 +82,7 @@ public:
 
   fix_result add_gps_fix (const gps_fix &fix);
   // Returns false if the sample was ignored (filter not initialized yet).
-  bool add_imu_sample (const Xbus &sample);
+  bool add_imu_sample (const imu_sample &sample);
 
   [[nodiscard]] bool
   initialized () const noexcept
@@ -100,7 +100,7 @@ public:
 private:
   void initialize (const gps_fix &fix);
   void propagate (kalman_filter<6> &filter, double dt,
-                  const std::array<double, 3> *accel_grid) const;
+                  const Eigen::Vector3d *accel_grid) const;
   [[nodiscard]] position_estimate to_estimate (const kalman_filter<6> &filter,
                                                double age_s) const;
 
@@ -110,12 +110,12 @@ private:
   std::uint32_t zone_number_{ 0 };
   char zone_char_{ '_' };
   double convergence_{ 0 };
-  utc last_fix_time_{};
+  double last_fix_time_{ 0 };
   double seconds_since_fix_{ 0 };
   std::size_t imu_samples_since_fix_{ 0 };
   std::size_t rejected_fixes_{ 0 };
-  std::optional<std::uint32_t> last_imu_tick_{};
-  std::optional<std::array<double, 3>> recent_accel_grid_{};
+  std::optional<double> last_imu_time_{};
+  std::optional<Eigen::Vector3d> recent_accel_grid_{};
 };
 
 #endif // !POSITION_ESTIMATOR_HPP

@@ -8,34 +8,39 @@ namespace
 {
 constexpr double DEG_TO_RAD = std::numbers::pi / 180;
 
+using vector2 = Eigen::Vector2d;
+using vector3 = Eigen::Vector3d;
+using matrix2 = Eigen::Matrix2d;
+using matrix3 = Eigen::Matrix3d;
+using vector6 = kalman_filter<6>::vector;
+using matrix6 = kalman_filter<6>::matrix;
+
 // Position measurement with altitude.
-const matrix<3, 6> H_position{ 1, 0, 0, 0, 0, 0, //
-                               0, 1, 0, 0, 0, 0, //
-                               0, 0, 1, 0, 0, 0 };
+const Eigen::Matrix<double, 3, 6> H_position{ { 1, 0, 0, 0, 0, 0 },
+                                              { 0, 1, 0, 0, 0, 0 },
+                                              { 0, 0, 1, 0, 0, 0 } };
 // Position measurement without altitude.
-const matrix<2, 6> H_horizontal{ 1, 0, 0, 0, 0, 0, //
-                                 0, 1, 0, 0, 0, 0 };
+const Eigen::Matrix<double, 2, 6> H_horizontal{ { 1, 0, 0, 0, 0, 0 },
+                                                { 0, 1, 0, 0, 0, 0 } };
 // Horizontal velocity measurement, all that GPS speed and course give.
-const matrix<2, 6> H_velocity{ 0, 0, 0, 1, 0, 0, //
-                               0, 0, 0, 0, 1, 0 };
+const Eigen::Matrix<double, 2, 6> H_velocity{ { 0, 0, 0, 1, 0, 0 },
+                                              { 0, 0, 0, 0, 1, 0 } };
 
 // Until a fix with altitude arrives the altitude state is effectively unknown.
 constexpr double unknown_altitude_sigma_m = 1e4;
 
-matrix<2, 2>
+matrix2
 diagonal_noise (double sigma)
 {
-  return { sigma * sigma, 0, 0, sigma * sigma };
+  return vector2::Constant (sigma * sigma).asDiagonal ();
 }
 
 // Rotates a vector from true east/north to UTM grid east/north. The grid
 // convergence is the clockwise angle from true north to grid north.
-std::array<double, 2>
+vector2
 true_to_grid (double east, double north, double convergence)
 {
-  const double c = std::cos (convergence);
-  const double s = std::sin (convergence);
-  return { (east * c) - (north * s), (east * s) + (north * c) };
+  return Eigen::Rotation2Dd (convergence) * vector2 (east, north);
 }
 
 double
@@ -46,7 +51,7 @@ horizontal_sigma (const gps_fix &fix, const estimator_config &config)
              : config.gps_default_sigma_m;
 }
 
-std::optional<vector<2>>
+std::optional<vector2>
 velocity_from_fix (const gps_fix &fix, double convergence)
 {
   if (!fix.course_deg)
@@ -54,10 +59,8 @@ velocity_from_fix (const gps_fix &fix, double convergence)
       return std::nullopt;
     }
   const double course = *fix.course_deg * DEG_TO_RAD;
-  const auto [ve, vn]
-      = true_to_grid (fix.speed_mps * std::sin (course),
-                      fix.speed_mps * std::cos (course), convergence);
-  return vector<2>{ ve, vn };
+  return true_to_grid (fix.speed_mps * std::sin (course),
+                       fix.speed_mps * std::cos (course), convergence);
 }
 } // namespace
 
@@ -75,12 +78,9 @@ position_estimator::initialize (const gps_fix &fix)
                                : unknown_altitude_sigma_m;
 
   convergence_ = fix.position.convergence ();
-  vector<6> x0{ fix.position.easting (),
-                fix.position.northing (),
-                fix.altitude_m.value_or (0),
-                0,
-                0,
-                0 };
+  vector6 x0 = vector6::Zero ();
+  x0.head<3> () << fix.position.easting (), fix.position.northing (),
+      fix.altitude_m.value_or (0);
   double sigma_vel = 5.0; // unknown, allow anything a vehicle could do
   if (fix.speed_mps < config_.stationary_speed_mps)
     {
@@ -88,23 +88,22 @@ position_estimator::initialize (const gps_fix &fix)
     }
   else if (const auto v = velocity_from_fix (fix, convergence_))
     {
-      x0 (3, 0) = (*v) (0, 0);
-      x0 (4, 0) = (*v) (1, 0);
+      x0.segment<2> (3) = *v;
       sigma_vel = config_.gps_velocity_sigma_mps * 2;
     }
 
   // A slow horizontal speed says nothing about the climb rate.
   constexpr double sigma_vel_up = 5.0;
-  matrix<6, 6> P0{};
-  P0 (0, 0) = P0 (1, 1) = sigma_pos * sigma_pos;
-  P0 (2, 2) = sigma_alt * sigma_alt;
-  P0 (3, 3) = P0 (4, 4) = sigma_vel * sigma_vel;
-  P0 (5, 5) = sigma_vel_up * sigma_vel_up;
+  vector6 variances;
+  variances << sigma_pos * sigma_pos, sigma_pos * sigma_pos,
+      sigma_alt * sigma_alt, sigma_vel * sigma_vel, sigma_vel * sigma_vel,
+      sigma_vel_up * sigma_vel_up;
+  const matrix6 P0 = variances.asDiagonal ();
 
   filter_ = kalman_filter<6>{ x0, P0 };
   zone_number_ = fix.position.zone_number ();
   zone_char_ = fix.position.zone_char ();
-  last_fix_time_ = fix.position.time ();
+  last_fix_time_ = fix.time_s;
   seconds_since_fix_ = 0;
   imu_samples_since_fix_ = 0;
   rejected_fixes_ = 0;
@@ -114,13 +113,10 @@ position_estimator::initialize (const gps_fix &fix)
 
 void
 position_estimator::propagate (kalman_filter<6> &filter, double dt,
-                               const std::array<double, 3> *accel_grid) const
+                               const vector3 *accel_grid) const
 {
-  auto F = matrix<6, 6>::identity ();
-  for (std::size_t i = 0; i < 3; ++i)
-    {
-      F (i, i + 3) = dt;
-    }
+  matrix6 F = matrix6::Identity ();
+  F.topRightCorner<3, 3> () = matrix3::Identity () * dt;
 
   const double sigma = accel_grid ? config_.imu_accel_sigma_mps2
                                   : config_.maneuver_accel_sigma_mps2;
@@ -130,36 +126,26 @@ position_estimator::propagate (kalman_filter<6> &filter, double dt,
   const double q = sigma * sigma;
   const double dt2 = dt * dt;
   const double dt3 = dt2 * dt;
-  matrix<6, 6> Q{};
-  vector<6> u{};
-  for (std::size_t i = 0; i < 3; ++i)
+  matrix6 Q;
+  Q << matrix3::Identity () * (q * dt3 / 3), matrix3::Identity () * (q * dt2 / 2),
+      matrix3::Identity () * (q * dt2 / 2), matrix3::Identity () * (q * dt);
+  vector6 u = vector6::Zero ();
+  if (accel_grid)
     {
-      Q (i, i) = q * dt3 / 3;
-      Q (i, i + 3) = Q (i + 3, i) = q * dt2 / 2;
-      Q (i + 3, i + 3) = q * dt;
-      if (accel_grid)
-        {
-          u (i, 0) = (*accel_grid)[i] * dt2 / 2;
-          u (i + 3, 0) = (*accel_grid)[i] * dt;
-        }
+      u << *accel_grid * (dt2 / 2), *accel_grid * dt;
     }
   filter.predict (F, Q, u);
 }
 
 bool
-position_estimator::add_imu_sample (const Xbus &sample)
+position_estimator::add_imu_sample (const imu_sample &sample)
 {
   double dt = config_.imu_nominal_dt_s;
-  if (sample.sampleTimeFineAvailable)
+  if (last_imu_time_)
     {
-      if (last_imu_tick_)
-        {
-          // Unsigned subtraction handles the 32 bit counter wrapping.
-          const std::uint32_t ticks = sample.sampleTimeFine - *last_imu_tick_;
-          dt = ticks / Xbus::sampleTimeFineHz;
-        }
-      last_imu_tick_ = sample.sampleTimeFine;
+      dt = sample.time_s - *last_imu_time_;
     }
+  last_imu_time_ = sample.time_s;
   if (dt <= 0 || dt > config_.imu_max_dt_s)
     {
       dt = config_.imu_nominal_dt_s;
@@ -170,28 +156,17 @@ position_estimator::add_imu_sample (const Xbus &sample)
       return false;
     }
 
-  if (const auto accel = sample.accelerationENU (config_.gravity_mps2))
-    {
-      const auto [grid_e, grid_n]
-          = true_to_grid ((*accel)[0], (*accel)[1], convergence_);
-      const std::array<double, 3> grid{ grid_e, grid_n, (*accel)[2] };
-      propagate (filter_, dt, &grid);
+  const vector3 accel = sample.acceleration_enu (config_.gravity_mps2);
+  vector3 grid;
+  grid << true_to_grid (accel.x (), accel.y (), convergence_), accel.z ();
+  propagate (filter_, dt, &grid);
 
-      const double alpha = dt / (config_.prediction_accel_tau_s + dt);
-      if (!recent_accel_grid_)
-        {
-          recent_accel_grid_ = grid;
-        }
-      for (std::size_t i = 0; i < 3; ++i)
-        {
-          (*recent_accel_grid_)[i]
-              += alpha * (grid[i] - (*recent_accel_grid_)[i]);
-        }
-    }
-  else
+  const double alpha = dt / (config_.prediction_accel_tau_s + dt);
+  if (!recent_accel_grid_)
     {
-      propagate (filter_, dt, nullptr);
+      recent_accel_grid_ = grid;
     }
+  *recent_accel_grid_ += alpha * (grid - *recent_accel_grid_);
 
   seconds_since_fix_ += dt;
   ++imu_samples_since_fix_;
@@ -210,7 +185,7 @@ position_estimator::add_gps_fix (const gps_fix &fix)
       return fix_result::initialized;
     }
 
-  const double dt = fix.position.time () - last_fix_time_;
+  const double dt = fix.time_s - last_fix_time_;
   if (dt <= 0)
     {
       return fix_result::rejected; // duplicate or out of order
@@ -221,7 +196,7 @@ position_estimator::add_gps_fix (const gps_fix &fix)
       propagate (filter_, dt, nullptr);
     }
 
-  last_fix_time_ = fix.position.time ();
+  last_fix_time_ = fix.time_s;
   seconds_since_fix_ = 0;
   imu_samples_since_fix_ = 0;
   convergence_ = fix.position.convergence ();
@@ -243,17 +218,18 @@ position_estimator::add_gps_fix (const gps_fix &fix)
   if (fix.altitude_m)
     {
       const double sigma_alt = sigma_pos * config_.gps_vertical_factor;
-      matrix<3, 3> R{};
-      R (0, 0) = R (1, 1) = sigma_pos * sigma_pos;
-      R (2, 2) = sigma_alt * sigma_alt;
-      passed = apply (vector<3>{ fix.position.easting (),
-                                 fix.position.northing (), *fix.altitude_m },
+      const matrix3 R
+          = vector3 (sigma_pos * sigma_pos, sigma_pos * sigma_pos,
+                     sigma_alt * sigma_alt)
+                .asDiagonal ();
+      passed = apply (vector3 (fix.position.easting (),
+                               fix.position.northing (), *fix.altitude_m),
                       H_position, R, config_.gate_nis_3d);
     }
   else
     {
       passed = apply (
-          vector<2>{ fix.position.easting (), fix.position.northing () },
+          vector2 (fix.position.easting (), fix.position.northing ()),
           H_horizontal, diagonal_noise (sigma_pos), config_.gate_nis);
     }
 
@@ -270,7 +246,7 @@ position_estimator::add_gps_fix (const gps_fix &fix)
 
   if (fix.speed_mps < config_.stationary_speed_mps)
     {
-      filter_.update (vector<2>{ 0, 0 }, H_velocity,
+      filter_.update (vector2::Zero ().eval (), H_velocity,
                       diagonal_noise (config_.stationary_velocity_sigma_mps));
     }
   else if (const auto v = velocity_from_fix (fix, convergence_))
@@ -290,13 +266,12 @@ position_estimator::to_estimate (const kalman_filter<6> &filter,
 {
   const auto &x = filter.state ();
   const auto &P = filter.covariance ();
-  return { .position = utm (x (0, 0), x (1, 0), zone_number_, zone_char_,
-                            last_fix_time_),
-           .altitude_m = x (2, 0),
+  return { .position = utm (x (0), x (1), zone_number_, zone_char_),
+           .altitude_m = x (2),
            .age_s = age_s,
-           .velocity_east_mps = x (3, 0),
-           .velocity_north_mps = x (4, 0),
-           .velocity_up_mps = x (5, 0),
+           .velocity_east_mps = x (3),
+           .velocity_north_mps = x (4),
+           .velocity_up_mps = x (5),
            .sigma_east_m = std::sqrt (P (0, 0)),
            .sigma_north_m = std::sqrt (P (1, 1)),
            .sigma_up_m = std::sqrt (P (2, 2)),
