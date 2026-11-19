@@ -1,0 +1,119 @@
+# rviz2 view of positioning_sim (gnss_imu_prediction), in the enu frame (east, north, up on the
+# ground at AirSim's OriginGeopoint). The estimates are poses pointing along
+# the estimated velocity; the true drone is the TF frame "drone".
+# Opened by --rviz on the run script (rviz:=true on the launch file).
+Panels:
+  - Class: rviz_common/Displays
+    Name: Displays
+  - Class: rviz_common/Views
+    Name: Views
+Visualization Manager:
+  Class: ""
+  Displays:
+    - Class: rviz_default_plugins/Grid
+      Name: "Grid"
+      Enabled: true
+      Reference Frame: <Fixed Frame>
+      Cell Size: 1
+      Plane Cell Count: 80
+      Color: 160; 160; 164
+      Alpha: 0.4
+    - Class: rviz_default_plugins/TF
+      Name: "TF (the truth)"
+      Enabled: true
+      Show Names: true
+      Show Axes: true
+      Show Arrows: false
+      Marker Scale: 2
+      Frames:
+        All Enabled: false
+        drone:
+          Value: true
+        enu:
+          Value: true
+    - Class: rviz_default_plugins/Pose
+      Name: "ghost: prediction, horizon ahead"
+      Enabled: true
+      Topic:
+        Value: /positioning/prediction
+        Depth: 5
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Durability Policy: Volatile
+      Shape: Arrow
+      Color: 40; 255; 60
+      Alpha: 0.5
+      Shaft Length: 0.8
+      Shaft Radius: 0.08
+      Head Length: 0.3
+      Head Radius: 0.2
+    - Class: rviz_default_plugins/Pose
+      Name: "Kalman estimate, now"
+      Enabled: true
+      Topic:
+        Value: /positioning/estimate
+        Depth: 5
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Durability Policy: Volatile
+      Shape: Arrow
+      Color: 40; 140; 255
+      Alpha: 0.9
+      Shaft Length: 0.6
+      Shaft Radius: 0.08
+      Head Length: 0.3
+      Head Radius: 0.2
+    - Class: rviz_default_plugins/Pose
+      Name: "baseline: last fix + velocity"
+      Enabled: true
+      Topic:
+        Value: /positioning/baseline
+        Depth: 5
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Durability Policy: Volatile
+      Shape: Arrow
+      Color: 190; 190; 190
+      Alpha: 0.5
+      Shaft Length: 0.5
+      Shaft Radius: 0.08
+      Head Length: 0.3
+      Head Radius: 0.2
+    - Class: rviz_default_plugins/Pose
+      Name: "raw GPS fix"
+      Enabled: true
+      Topic:
+        Value: /positioning/gps
+        Depth: 5
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Durability Policy: Volatile
+      Shape: Arrow
+      Color: 255; 220; 40
+      Alpha: 0.9
+      Shaft Length: 0.4
+      Shaft Radius: 0.08
+      Head Length: 0.3
+      Head Radius: 0.2
+  Enabled: true
+  Global Options:
+    Fixed Frame: enu
+    Background Color: 40; 40; 44
+    Frame Rate: 30
+  Tools:
+    - Class: rviz_default_plugins/Interact
+    - Class: rviz_default_plugins/MoveCamera
+    - Class: rviz_default_plugins/Select
+  Value: true
+  Views:
+    Current:
+      Class: rviz_default_plugins/Orbit
+      Name: "Current View"
+      Target Frame: <Fixed Frame>
+      Distance: 45
+      Focal Point:
+        X: 0
+        Y: 0
+        Z: 6
+      Pitch: 0.6
+      Yaw: -1.2
