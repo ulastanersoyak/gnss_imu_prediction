@@ -1,0 +1,120 @@
+# positioning_sim's ROS parameters, for generate_parameter_library: it
+# generates the C++ that declares, describes and checks them
+# (`ros2 param describe /positioning_sim <name>`). sim/run.sh turns
+# --name value into name:=value; the launch file gives doubles their
+# decimal point (localization_core airsim/launch/ros_params.py).
+# The flight (radius, altitude, altitude_swing) is the autopilot's:
+# localization_core airsim/autopilot.py.
+positioning_sim_parameters:
+  horizon:
+    type: double
+    default_value: 1.0
+    description: "predict this many seconds ahead"
+    read_only: true
+    validation:
+      gt<>: [0.0]
+  duration:
+    type: double
+    default_value: 0.0
+    description: "stop after this many seconds (0: at Ctrl-C)"
+    read_only: true
+    validation:
+      gt_eq<>: [0.0]
+  seed:
+    type: int
+    default_value: 1
+    description: "noise seed"
+    read_only: true
+    validation:
+      gt_eq<>: [0]
+
+  # The GPS receiver: white noise plus an optional slowly wandering
+  # (first order Gauss-Markov) error.
+  gps_noise:
+    type: double
+    default_value: 1.5
+    description: "white GPS position noise, metres"
+    read_only: true
+    validation:
+      gt_eq<>: [0.0]
+  gps_drift:
+    type: double
+    default_value: 0.0
+    description: "slowly wandering (Gauss-Markov) GPS error, metres"
+    read_only: true
+    validation:
+      gt_eq<>: [0.0]
+  gps_drift_tau:
+    type: double
+    default_value: 60.0
+    description: "its correlation time, seconds"
+    read_only: true
+    validation:
+      gt<>: [0.0]
+  speed_noise:
+    type: double
+    default_value: 0.05
+    description: "GPS velocity noise, m/s"
+    read_only: true
+    validation:
+      gt_eq<>: [0.0]
+  gps_vfactor:
+    type: double
+    default_value: 1.7
+    description: "altitude noise and drift relative to the horizontal ones"
+    read_only: true
+    validation:
+      gt<>: [0.0]
+
+  # IMU errors on top of AirSim's white noise: a constant bias per axis
+  # drawn at startup, and a slowly wandering orientation error.
+  accel_bias:
+    type: double
+    default_value: 0.02
+    description: "accelerometer bias per axis, m/s^2"
+    read_only: true
+    validation:
+      gt_eq<>: [0.0]
+  tilt_error:
+    type: double
+    default_value: 0.2
+    description: "roll/pitch error, degrees"
+    read_only: true
+    validation:
+      gt_eq<>: [0.0]
+  heading_error:
+    type: double
+    default_value: 1.0
+    description: "heading error, degrees"
+    read_only: true
+    validation:
+      gt_eq<>: [0.0]
+  orientation_error_tau:
+    type: double
+    default_value: 30.0
+    description: "orientation error correlation time, seconds"
+    read_only: true
+    validation:
+      gt<>: [0.0]
+
+  # The enu frame's origin: AirSim's OriginGeopoint (the launch file
+  # passes it from the settings).
+  origin_latitude:
+    type: double
+    default_value: 39.97656
+    description: "the enu frame's origin: AirSim's OriginGeopoint (the launch file passes it)"
+    read_only: true
+    validation:
+      bounds<>: [-90.0, 90.0]
+  origin_longitude:
+    type: double
+    default_value: 32.73812
+    description: "see origin_latitude"
+    read_only: true
+    validation:
+      bounds<>: [-180.0, 180.0]
+  origin_altitude:
+    type: double
+    default_value: 894.0
+    description: "see origin_latitude"
+    read_only: true

@@ -2,22 +2,23 @@
 # Flies the simulated drone in Cosys-AirSim (Unreal) and runs positioning_sim,
 # the Kalman prediction, against it over ROS 2.
 #
-#   sim/run.sh [--scenario field|antwerp] [--no-gui] [weather] [positioning_sim options]
+#   sim/run.sh [--scenario field|antwerp] [--no-gui] [--rviz] [--manual] [weather] [options]
 #
 #   field     (default) open ground at the site of the recorded data
 #   antwerp   over Groenplaats in Antwerp's 3D city model
 #   --no-gui  Unreal without a window
+#   --rviz    rviz2 with sim/rviz/positioning.rviz (the ghost, the estimate,
+#             the raw fixes and the true drone frame)
+#   --manual  no autopilot: fly with localization_core/airsim/keyboard.sh
 #   weather   --rain I --snow I --fog I --dust I --leaves I (0..1), --wind SPEED[@FROM_DEG]
-#   positioning_sim options: its ROS parameters written --name value
-#             (--duration S, --horizon S, --gps-noise M, --manual to fly with
-#             localization_core/airsim/keyboard.sh, ...; the list with
-#             descriptions: ros2 param describe /positioning_sim <name>, or
-#             the top of sim/src/positioning_sim.cpp)
+#   options   ROS parameters written --name value: positioning_sim's
+#             (--duration S, --horizon S, --gps-noise M, ...; the list with
+#             descriptions: sim/src/positioning_sim_parameters.yaml) and the
+#             autopilot's (--radius M, --altitude M, --altitude-swing M)
 #
 # The simulator side is localization_core/airsim (run airsim/setup.sh once);
 # ROS 2 runs in the "ros2" distrobox ($LOCSIM_ROS_BOX); the ROS programs are
-# started by sim/launch/positioning.launch.py. Watch the ghost in
-# rviz2 (fixed frame "enu", topic /positioning/markers).
+# started by sim/launch/positioning.launch.py.
 #
 # Each run is recorded into build-ros/runs/positioning-<scenario>-<time>
 # (rosbag2: the truth as TF and the estimates) and scored at the end by
@@ -39,11 +40,14 @@ box=${LOCSIM_ROS_BOX:-ros2}
 
 scenario=field
 engine_args=()
+launch_args=()
 args=()
 while [[ $# -gt 0 ]]; do
   case $1 in
     --scenario) scenario=$2; shift 2 ;;
     --no-gui|--headless) engine_args+=(--offscreen); shift ;;
+    --rviz) launch_args+=(rviz:=true); shift ;;
+    --manual) launch_args+=(autopilot:=false); shift ;;
     --rain|--snow|--fog|--dust|--leaves|--wind) engine_args+=("$1" "$2"); shift 2 ;;
     *) args+=("$1"); shift ;;
   esac
@@ -70,7 +74,7 @@ mkdir -p "$(dirname "$bag")"
 status=0
 "$core/airsim/run.sh" --map "$map" --settings "$settings" ${engine_args[@]+"${engine_args[@]}"} \
   --launch "$root/sim/launch/positioning.launch.py" "settings:=$settings" "record:=$bag" \
-  "params:=${ros_params[*]+${ros_params[*]}}" || status=$?
+  "params:=${ros_params[*]+${ros_params[*]}}" ${launch_args[@]+"${launch_args[@]}"} || status=$?
 
 if [[ -d $bag ]]; then
   # evo reads the TF from the recording with ROS's tf2_py.
