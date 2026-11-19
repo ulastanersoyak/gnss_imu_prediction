@@ -1,7 +1,5 @@
-#ifndef ESTIMATOR_TEST_HPP
-#define ESTIMATOR_TEST_HPP
+#include <gtest/gtest.h>
 
-#include "check.hpp"
 #include "kalman/position_estimator.hpp"
 
 #include <cstdint>
@@ -24,8 +22,7 @@ make_fix (double easting, double northing, int second, double speed_mps = 0,
 }
 } // namespace kalman_test
 
-void
-estimator_gps_only_test ()
+TEST (estimator, gps_only)
 {
   using namespace kalman_test;
 
@@ -36,44 +33,48 @@ estimator_gps_only_test ()
   position_estimator estimator{};
   constexpr double speed = 10.0;
 
-  check (!estimator.estimate (), "no estimate before the first fix");
+  ASSERT_TRUE (!estimator.estimate ()) << "no estimate before the first fix";
   for (int t = 0; t <= 40; ++t)
     {
       const auto result = estimator.add_gps_fix (
           make_fix (start_easting + speed * t + noise (rng),
                     start_northing + noise (rng), t, speed));
-      check (result
-                 == (t == 0 ? position_estimator::fix_result::initialized
-                            : position_estimator::fix_result::accepted),
-             "fix accepted at t=" + std::to_string (t));
+      ASSERT_TRUE (result
+                   == (t == 0 ? position_estimator::fix_result::initialized
+                              : position_estimator::fix_result::accepted))
+          << "fix accepted at t=" + std::to_string (t);
     }
 
   const auto est = estimator.estimate ();
-  check (est.has_value (), "estimate available");
+  ASSERT_TRUE (est.has_value ()) << "estimate available";
   // Without course/speed measurements the velocity is only as good as the
   // differenced positions, check against the filter's own 3 sigma bound.
-  check (est->sigma_velocity_east_mps < 2.5, "velocity uncertainty bounded");
-  check_near (est->velocity_east_mps, speed, 3 * est->sigma_velocity_east_mps,
-              "gps only east velocity");
-  check_near (est->velocity_north_mps, 0.0, 3 * est->sigma_velocity_north_mps,
-              "gps only north velocity");
-  check_near (est->position.easting (), start_easting + speed * 40, 2.0,
-              "gps only easting");
-  check_near (est->position.northing (), start_northing, 2.0,
-              "gps only northing");
-  check (est->sigma_east_m < 2.0, "filter is more certain than one fix");
+  ASSERT_TRUE (est->sigma_velocity_east_mps < 2.5)
+      << "velocity uncertainty bounded";
+  ASSERT_NEAR (est->velocity_east_mps, speed, 3 * est->sigma_velocity_east_mps)
+      << "gps only east velocity";
+  ASSERT_NEAR (est->velocity_north_mps, 0.0, 3 * est->sigma_velocity_north_mps)
+      << "gps only north velocity";
+  ASSERT_NEAR (est->position.easting (), start_easting + speed * 40, 2.0)
+      << "gps only easting";
+  ASSERT_NEAR (est->position.northing (), start_northing, 2.0)
+      << "gps only northing";
+  ASSERT_TRUE (est->sigma_east_m < 2.0)
+      << "filter is more certain than one fix";
 
   const auto ahead = estimator.predict_ahead (2.0);
-  check_near (ahead->position.easting () - est->position.easting (),
-              2 * est->velocity_east_mps, 1e-6, "prediction ahead");
+  ASSERT_NEAR (ahead->position.easting () - est->position.easting (),
+               2 * est->velocity_east_mps, 1e-6)
+      << "prediction ahead";
 
   // A 200 m jump is an outlier and must not move the estimate.
   const auto result = estimator.add_gps_fix (
       make_fix (start_easting + speed * 41 + 200, start_northing, 41, speed));
-  check (result == position_estimator::fix_result::rejected,
-         "outlier rejected");
-  check_near (estimator.estimate ()->position.easting (),
-              start_easting + speed * 41, 3.0, "outlier ignored");
+  ASSERT_TRUE (result == position_estimator::fix_result::rejected)
+      << "outlier rejected";
+  ASSERT_NEAR (estimator.estimate ()->position.easting (),
+               start_easting + speed * 41, 3.0)
+      << "outlier ignored";
 
   // A real jump (persistent) eventually restarts the filter.
   auto last = position_estimator::fix_result::rejected;
@@ -83,12 +84,11 @@ estimator_gps_only_test ()
       last = estimator.add_gps_fix (
           make_fix (start_easting + 5000 + speed * t, start_northing, t));
     }
-  check (last == position_estimator::fix_result::reset,
-         "persistent jump resets the filter");
+  ASSERT_TRUE (last == position_estimator::fix_result::reset)
+      << "persistent jump resets the filter";
 }
 
-void
-estimator_course_test ()
+TEST (estimator, course)
 {
   using namespace kalman_test;
 
@@ -101,13 +101,13 @@ estimator_course_test ()
   const auto est = estimator.estimate ();
   // Course is relative to true north, the grid is rotated by the convergence
   // (about -0.17 degrees here), so a little velocity leaks into east.
-  check_near (est->velocity_north_mps, 5.0, 0.2, "course north velocity");
-  check_near (est->velocity_east_mps, 0.0, 0.1, "course east velocity");
-  check (est->sigma_velocity_north_mps < 0.3, "course velocity is certain");
+  ASSERT_NEAR (est->velocity_north_mps, 5.0, 0.2) << "course north velocity";
+  ASSERT_NEAR (est->velocity_east_mps, 0.0, 0.1) << "course east velocity";
+  ASSERT_TRUE (est->sigma_velocity_north_mps < 0.3)
+      << "course velocity is certain";
 }
 
-void
-estimator_imu_test ()
+TEST (estimator, imu)
 {
   using namespace kalman_test;
 
@@ -115,8 +115,8 @@ estimator_imu_test ()
   imu_sample sample{};
   sample.specific_force = { 1.0, 0.0, standard_gravity_mps2 };
 
-  check (!estimator.add_imu_sample (sample),
-         "imu ignored before the first fix");
+  ASSERT_TRUE (!estimator.add_imu_sample (sample))
+      << "imu ignored before the first fix";
   (void)estimator.add_gps_fix (make_fix (start_easting, start_northing, 0));
   const double sigma_before = estimator.estimate ()->sigma_east_m;
 
@@ -124,32 +124,32 @@ estimator_imu_test ()
   for (int i = 1; i <= 100; ++i)
     {
       sample.time_s = i * 0.01;
-      check (estimator.add_imu_sample (sample), "imu sample used");
+      ASSERT_TRUE (estimator.add_imu_sample (sample)) << "imu sample used";
     }
 
   const auto est = estimator.estimate ();
-  check_near (est->age_s, 1.0, 1e-9, "imu prediction time");
-  check_near (est->velocity_east_mps, 1.0, 0.02, "imu integrated velocity");
-  check_near (est->position.easting () - start_easting, 0.5, 0.02,
-              "imu integrated position");
-  check (est->sigma_east_m > sigma_before, "uncertainty grows without gps");
+  ASSERT_NEAR (est->age_s, 1.0, 1e-9) << "imu prediction time";
+  ASSERT_NEAR (est->velocity_east_mps, 1.0, 0.02) << "imu integrated velocity";
+  ASSERT_NEAR (est->position.easting () - start_easting, 0.5, 0.02)
+      << "imu integrated position";
+  ASSERT_TRUE (est->sigma_east_m > sigma_before)
+      << "uncertainty grows without gps";
 
   // Prediction keeps accelerating: x + v t + a t^2 / 2.
   const auto ahead = estimator.predict_ahead (1.0);
-  check_near (ahead->position.easting () - est->position.easting (),
-              est->velocity_east_mps + 0.5, 0.02,
-              "prediction uses the measured acceleration");
+  ASSERT_NEAR (ahead->position.easting () - est->position.easting (),
+               est->velocity_east_mps + 0.5, 0.02)
+      << "prediction uses the measured acceleration";
 
   // The next fix is accepted and pulls the estimate towards it.
   const auto result = estimator.add_gps_fix (
       make_fix (start_easting + 0.5, start_northing, 1, 1.0, 90.0));
-  check (result == position_estimator::fix_result::accepted,
-         "fix after imu prediction");
-  check_near (estimator.estimate ()->age_s, 0.0, 1e-9, "age reset by fix");
+  ASSERT_TRUE (result == position_estimator::fix_result::accepted)
+      << "fix after imu prediction";
+  ASSERT_NEAR (estimator.estimate ()->age_s, 0.0, 1e-9) << "age reset by fix";
 }
 
-void
-estimator_altitude_test ()
+TEST (estimator, altitude)
 {
   using namespace kalman_test;
 
@@ -175,21 +175,24 @@ estimator_altitude_test ()
           fix_at (t, start_altitude + climb * t + alt_noise (rng)));
     }
   auto est = estimator.estimate ();
-  check_near (est->altitude_m, start_altitude + climb * 40,
-              3 * est->sigma_up_m, "altitude tracked");
-  check (est->sigma_up_m < 3.4, "filter is more certain than one altitude");
-  check_near (est->velocity_up_mps, climb, 3 * est->sigma_velocity_up_mps,
-              "climb rate from the altitudes");
+  ASSERT_NEAR (est->altitude_m, start_altitude + climb * 40,
+               3 * est->sigma_up_m)
+      << "altitude tracked";
+  ASSERT_TRUE (est->sigma_up_m < 3.4)
+      << "filter is more certain than one altitude";
+  ASSERT_NEAR (est->velocity_up_mps, climb, 3 * est->sigma_velocity_up_mps)
+      << "climb rate from the altitudes";
 
   const auto ahead = estimator.predict_ahead (2.0);
-  check_near (ahead->altitude_m - est->altitude_m, 2 * est->velocity_up_mps,
-              1e-6, "altitude prediction");
+  ASSERT_NEAR (ahead->altitude_m - est->altitude_m, 2 * est->velocity_up_mps,
+               1e-6)
+      << "altitude prediction";
 
   // A 200 m altitude spike alone is an outlier.
   const auto result
       = estimator.add_gps_fix (fix_at (41, start_altitude + climb * 41 + 200));
-  check (result == position_estimator::fix_result::rejected,
-         "altitude outlier rejected");
+  ASSERT_TRUE (result == position_estimator::fix_result::rejected)
+      << "altitude outlier rejected";
 
   // Going straight up has a low ground speed, which zeroes the horizontal
   // velocity but must not zero the climb rate.
@@ -200,26 +203,28 @@ estimator_altitude_test ()
       fix.altitude_m = start_altitude + climb * t;
       (void)straight_up.add_gps_fix (fix);
     }
-  check_near (straight_up.estimate ()->velocity_up_mps, climb, 0.1,
-              "low ground speed keeps the climb rate");
-  check_near (straight_up.estimate ()->velocity_east_mps, 0.0, 0.1,
-              "low ground speed zeroes the horizontal velocity");
+  ASSERT_NEAR (straight_up.estimate ()->velocity_up_mps, climb, 0.1)
+      << "low ground speed keeps the climb rate";
+  ASSERT_NEAR (straight_up.estimate ()->velocity_east_mps, 0.0, 0.1)
+      << "low ground speed zeroes the horizontal velocity";
 
   // The filter starts without altitude and takes the first one it gets.
   position_estimator late{};
   (void)late.add_gps_fix (make_fix (start_easting, start_northing, 0));
-  check (late.estimate ()->sigma_up_m > 1000, "altitude unknown at first");
+  ASSERT_TRUE (late.estimate ()->sigma_up_m > 1000)
+      << "altitude unknown at first";
   auto first = make_fix (start_easting, start_northing, 1);
   first.altitude_m = start_altitude;
-  check (late.add_gps_fix (first) == position_estimator::fix_result::accepted,
-         "first altitude accepted");
-  check_near (late.estimate ()->altitude_m, start_altitude, 0.1,
-              "first altitude adopted");
-  check (late.estimate ()->sigma_up_m < 10, "altitude known after a fix");
+  ASSERT_TRUE (late.add_gps_fix (first)
+               == position_estimator::fix_result::accepted)
+      << "first altitude accepted";
+  ASSERT_NEAR (late.estimate ()->altitude_m, start_altitude, 0.1)
+      << "first altitude adopted";
+  ASSERT_TRUE (late.estimate ()->sigma_up_m < 10)
+      << "altitude known after a fix";
 }
 
-void
-estimator_vertical_imu_test ()
+TEST (estimator, vertical_imu)
 {
   using namespace kalman_test;
 
@@ -241,13 +246,13 @@ estimator_vertical_imu_test ()
     }
 
   const auto est = estimator.estimate ();
-  check_near (est->velocity_up_mps, 2.0, 0.03, "imu integrated climb rate");
-  check_near (est->altitude_m - 100.0, 1.0, 0.03, "imu integrated altitude");
-  check_near (est->velocity_east_mps, 0.0, 1e-9, "no horizontal leakage");
+  ASSERT_NEAR (est->velocity_up_mps, 2.0, 0.03) << "imu integrated climb rate";
+  ASSERT_NEAR (est->altitude_m - 100.0, 1.0, 0.03)
+      << "imu integrated altitude";
+  ASSERT_NEAR (est->velocity_east_mps, 0.0, 1e-9) << "no horizontal leakage";
 
   const auto ahead = estimator.predict_ahead (1.0);
-  check_near (ahead->altitude_m - est->altitude_m, est->velocity_up_mps + 1.0,
-              0.03, "prediction uses the vertical acceleration");
+  ASSERT_NEAR (ahead->altitude_m - est->altitude_m, est->velocity_up_mps + 1.0,
+               0.03)
+      << "prediction uses the vertical acceleration";
 }
-
-#endif // !ESTIMATOR_TEST_HPP
