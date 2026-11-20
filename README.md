@@ -40,17 +40,17 @@ airsim imu  (100 hz) ─────────▶ ahrs error model ───�
 | path | what |
 |---|---|
 | `includes/kalman/`, `src/kalman/` | `position_estimator`, the filter and the prediction (target `kalman`) |
-| `sim/` | simulation: `positioning_sim` (a ros 2 node for cosys-airsim), its launch file and run script |
-| `test/cpp/` | unit tests of the estimator |
+| `sim/` | simulation: `positioning_sim` (a ros 2 node for cosys-airsim) and its parameters (`src/positioning_sim_parameters.yaml`), the launch file, run script and rviz2 view |
+| `test/cpp/` | unit tests of the estimator (googletest) |
 | `external/localization_core/` | submodule: utm, the kalman core, the measurement types, the simulator side (`airsim/`) |
 | `docs/` | the html guides, the kalman paper used, images |
 
 ## building
 
-needs cmake ≥ 3.22, a c++20 compiler, eigen and geographiclib (fedora:
-`eigen3-devel GeographicLib-devel`, ubuntu: `libeigen3-dev
-libgeographiclib-dev`); the simulation builds in the `ros2` distrobox set up
-by `external/localization_core/airsim/setup.sh`.
+needs cmake ≥ 3.22, a c++20 compiler, eigen, geographiclib and googletest
+(fedora: `eigen3-devel GeographicLib-devel gtest-devel`, ubuntu:
+`libeigen3-dev libgeographiclib-dev libgtest-dev`); the simulation builds in
+the `ros2` distrobox set up by `external/localization_core/airsim/setup.sh`.
 
 ```
 git clone --recurse-submodules <url>/gnss_imu_prediction
@@ -71,9 +71,11 @@ while its speed swings between 1 and 4 m/s and its height between 5 and 11 m.
 it carries a 100 hz imu (50 hz from airsim's ros 2 node) and a 1 hz gps;
 `positioning_sim` adds 1.5 m of horizontal gps noise and imu bias and
 orientation errors. it is a ROS 2 node: it feeds the sensors to the same
-`position_estimator` the tests check, publishes the prediction as a "ghost"
-marker in front of the drone, and scores every prediction against the true
-pose once the simulation reaches that moment.
+`position_estimator` the tests check, publishes the prediction (the "ghost"
+in front of the drone), and compares every prediction with the true pose
+once the simulation reaches that moment. the drone is flown by
+localization_core's `airsim/autopilot.py`, so the program only measures and
+estimates.
 
 ```
 sim/run.sh                                         # the open field, unreal window
@@ -81,7 +83,8 @@ sim/run.sh --scenario antwerp                      # over groenplaats in antwerp
 sim/run.sh --no-gui --duration 120                 # no window, stop after 120 simulated s
 sim/run.sh --rain 0.6 --fog 0.2 --wind 6@270       # airsim's weather, wind from the west
 sim/run.sh --horizon 0.5 --gps-noise 3 --gps-drift 2
-sim/run.sh --manual                                # fly it yourself: localization_core/airsim/keyboard.sh
+sim/run.sh --rviz                                  # watch it in rviz2 (sim/rviz/positioning.rviz)
+sim/run.sh --manual                                # no autopilot, fly it yourself: localization_core/airsim/keyboard.sh
 ```
 
 the simulator side (unreal, cosys-airsim, its ros 2 node, the maps) lives in
@@ -89,19 +92,22 @@ localization_core: run `external/localization_core/airsim/setup.sh` once
 (see [localization_core/airsim](external/localization_core/airsim/README.md)).
 `run.sh` builds `positioning_sim` into `build-ros/` in the `ros2` distrobox
 (ubuntu 24.04, ros 2 jazzy), starts unreal, then `sim/launch/positioning.launch.py`
-(airsim's ros 2 node, the program and a rosbag2 recorder). the run is
+(airsim's ros 2 node, the autopilot, the program and a rosbag2 recorder). the run is
 recorded into `build-ros/runs/positioning-<scenario>-<time>` and, when it
 ends (`--duration` or ctrl-c), scored against airsim's true pose by
 localization_core's `airsim/evaluate.py` (evo); evo's own tools plot the same
-recording (see localization_core/airsim). the options are
-`positioning_sim`'s ros 2 parameters (`--gps-noise 3` becomes
-`gps_noise:=3`; `ros2 param describe /positioning_sim gps_noise` explains
-one):
+recording (see localization_core/airsim). the options are ros 2
+parameters (`--gps-noise 3` becomes `gps_noise:=3`): `positioning_sim`'s,
+defined in `sim/src/positioning_sim_parameters.yaml` with
+[generate_parameter_library](https://github.com/PickNikRobotics/generate_parameter_library)
+(`ros2 param describe /positioning_sim gps_noise` explains one), and the
+autopilot's (`--radius`, `--altitude`, `--altitude-swing`):
 
 | option | default | |
 |---|---|---|
 | `--scenario s` | field | `field` (an open field) or `antwerp` |
 | `--no-gui` | | unreal without a window |
+| `--rviz` | | rviz2 with `sim/rviz/positioning.rviz` |
 | `--rain/--snow/--fog/--dust i` | | airsim weather, 0..1 |
 | `--wind s[@from_deg]` | | wind speed m/s, from this direction (225 = south-west) |
 | `--horizon s` | 1.0 | how far ahead the ghost predicts (0.01 = next imu sample) |
@@ -115,19 +121,17 @@ one):
 | `--radius m` | 12 | figure-eight loop radius |
 | `--altitude m` | 8 | cruise height above the ground |
 | `--altitude-swing m` | 3 | how far it climbs and descends around the cruise height |
-| `--manual` | | don't fly; publish `/cmd_vel` yourself (airsim/keyboard.sh) |
+| `--manual` | | no autopilot; publish `/cmd_vel` yourself (airsim/keyboard.sh) |
 
 the estimates are published as `geometry_msgs/PoseStamped` in the `enu`
 frame: `/positioning/estimate` (now), `/positioning/prediction` (the ghost,
 stamped with the time it predicts), `/positioning/baseline` and
-`/positioning/gps` (the noisy fixes). the ghost and the gps fixes are also
-drawn as `visualization_msgs/Marker` on `/positioning/markers` (rviz2 with
-fixed frame `enu`), and the program prints the latest prediction error every
-second.
+`/positioning/gps` (the noisy fixes), each pointing along its velocity. the
+program prints the latest prediction error every second. `--rviz` shows
+them in rviz2 (`sim/rviz/positioning.rviz`, fixed frame `enu`):
 
-what is drawn:
-
-- **green box**: the predicted pose
-- **orange sphere and red line**: where an earlier ghost said the vehicle
-  would be now, and how far off it was
-- **yellow dots**: the last 20 noisy gps fixes, at their noisy altitude
+- **green arrow**: the ghost, the predicted pose
+- **blue arrow**: the kalman estimate now
+- **grey arrow**: the baseline, the last fix carried forward with its velocity
+- **yellow arrow**: the latest noisy gps fix
+- **the `drone` frame**: the true pose

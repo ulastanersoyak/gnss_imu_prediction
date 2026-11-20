@@ -70,7 +70,7 @@ git -c protocol.file.allow=always submodule update --init</code></pre>
 
 <h2>2. build and run the tests</h2>
 <ol class="steps">
-<li><b>Prerequisites:</b> CMake ≥ 3.22, a C++20 compiler, Eigen and GeographicLib (Fedora: <code>eigen3-devel GeographicLib-devel</code>, Ubuntu: <code>libeigen3-dev libgeographiclib-dev</code>; the <code>ros2</code> distrobox has them).</li>
+<li><b>Prerequisites:</b> CMake ≥ 3.22, a C++20 compiler, Eigen, GeographicLib and GoogleTest (Fedora: <code>eigen3-devel GeographicLib-devel gtest-devel</code>, Ubuntu: <code>libeigen3-dev libgeographiclib-dev libgtest-dev</code>; the <code>ros2</code> distrobox has them).</li>
 <li><b>Build:</b>
 <pre><code>cmake -S . -B build
 cmake --build build -j</code></pre></li>
@@ -86,18 +86,19 @@ cmake --build build -j</code></pre></li>
 cd external/localization_core
 git submodule update --init --depth 1 external/Cosys-AirSim
 airsim/setup.sh</code></pre></li>
-<li><b>Start it.</b> <code>run.sh</code> builds <code>positioning_sim</code> in the box, starts Unreal, then one ROS 2 launch file: AirSim's ROS 2 node, <code>positioning_sim</code> and a recorder.
+<li><b>Start it.</b> <code>run.sh</code> builds <code>positioning_sim</code> in the box, starts Unreal, then one ROS 2 launch file: AirSim's ROS 2 node, the autopilot, <code>positioning_sim</code> and a recorder.
 <pre><code>sim/run.sh                                   # the open field, Unreal window
 sim/run.sh --no-gui --duration 120           # no window
-sim/run.sh --scenario antwerp --rain 0.6     # over Antwerp's city centre, in rain</code></pre></li>
-<li><b>Watch it.</b> The drone takes off and flies a figure-eight. In <code>rviz2</code> (fixed frame <code>enu</code>, topic <code>/positioning/markers</code>) the <span style="color:var(--ok)">green box</span> is where the filter says it will be in one second, the orange sphere where an earlier ghost said the drone would be now, and the yellow dots the noisy GPS fixes. The terminal prints the latest prediction error once per second.</li>
+sim/run.sh --scenario antwerp --rain 0.6     # over Antwerp's city centre, in rain
+sim/run.sh --rviz                            # with rviz2</code></pre></li>
+<li><b>Watch it.</b> The drone takes off and flies a figure-eight (localization_core's autopilot flies it). With <code>--rviz</code>, rviz2 opens <code>sim/rviz/positioning.rviz</code>: the <span style="color:var(--ok)">green arrow</span> is the ghost, where the filter says the drone will be in one second; the blue arrow the estimate now, the grey one the last fix carried forward, the yellow one the latest noisy GPS fix, and the <code>drone</code> frame the true pose. The arrows point along the estimated velocity. The terminal prints the latest prediction error once per second.</li>
 <li><b>At the end</b> (<code>--duration</code> or Ctrl-C) the recording is scored against AirSim's true pose with <a href="https://github.com/MichaelGrupp/evo">evo</a>: the ghost vs. the raw GPS extrapolated, the current-position estimate vs. the raw fix, with the vertical error. Each run is kept in <code>build-ros/runs/</code>; plot one with evo:
 <pre><code>distrobox enter ros2 -- bash -c '. /opt/ros/jazzy/setup.bash &amp;&amp; external/localization_core/airsim/.venv/bin/evo_ape \
     bag2 build-ros/runs/&lt;run&gt; /tf:enu.drone /positioning/prediction --plot'</code></pre></li>
 </ol>
 
 <h3>things to try</h3>
-<p>The options are <code>positioning_sim</code>'s ROS parameters, written <code>--name value</code>.</p>
+<p>The options are ROS parameters, written <code>--name value</code>: <code>positioning_sim</code>'s (defined in <code>sim/src/positioning_sim_parameters.yaml</code>) and the autopilot's (<code>--radius</code>, <code>--altitude</code>, <code>--altitude-swing</code>).</p>
 <table>
 <tr><th>command</th><th>what you learn</th></tr>
 <tr><td><code>--horizon 0.5</code> / <code>--horizon 2</code></td><td>how the prediction error grows with the horizon</td></tr>
@@ -107,9 +108,9 @@ sim/run.sh --scenario antwerp --rain 0.6     # over Antwerp's city centre, in ra
 <tr><td><code>--accel-bias 0.2</code></td><td>accelerometer bias shows up mostly in the vertical estimate</td></tr>
 <tr><td><code>--radius 6 --altitude-swing 5</code></td><td>tighter turns and steeper climbs: harder to predict</td></tr>
 <tr><td><code>--wind 8@270</code></td><td>AirSim's wind pushes the drone: motion the autopilot did not command</td></tr>
-<tr><td><code>--manual</code></td><td>fly it yourself: <code>external/localization_core/airsim/keyboard.sh</code> publishes <code>/cmd_vel</code></td></tr>
+<tr><td><code>--manual</code></td><td>no autopilot, fly it yourself: <code>external/localization_core/airsim/keyboard.sh</code> publishes <code>/cmd_vel</code></td></tr>
 </table>
-<p>All options: the table in the README, or <code>ros2 param describe /positioning_sim &lt;name&gt;</code> while it runs.</p>
+<p>All options: the table in the README, the YAML file, or <code>ros2 param describe /positioning_sim &lt;name&gt;</code> while it runs.</p>
 
 <h2>troubleshooting</h2>
 <table>
